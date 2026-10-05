@@ -1,144 +1,65 @@
-import {
-  useEffect,
-  useState,
-} from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import {
   doc,
   getDoc,
-  setDoc,
   serverTimestamp,
+  setDoc,
 } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
-import {
-  auth,
-  db,
-} from "../firebase";
+const EMPTY_ADDRESS = {
+  id: "",
+  label: "Home",
+  fullName: "",
+  phone: "",
+  address: "",
+  city: "",
+  state: "",
+  pin: "",
+  isDefault: false,
+};
 
-function Profile({
-  onBack,
-}) {
-  // =====================================================
-  // STATE
-  // =====================================================
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [profile, setProfile] =
-    useState({
-      fullName: "",
-      phone: "",
-      email: "",
-    });
-
-  const [addresses, setAddresses] =
-    useState([]);
-
-  const [showAddressForm, setShowAddressForm] =
-    useState(false);
-
-  const [editingAddressId, setEditingAddressId] =
-    useState(null);
-
-  const [addressForm, setAddressForm] =
-    useState({
-      label: "Home",
-      fullName: "",
-      phone: "",
-      address: "",
-      city: "",
-      state: "",
-      pin: "",
-    });
-
-  // =====================================================
-  // LOAD PROFILE
-  // =====================================================
+function Profile({ onBack }) {
+  const [profile, setProfile] = useState({
+    fullName: "",
+    phone: "",
+    email: auth.currentUser?.email || "",
+  });
+  const [addresses, setAddresses] = useState([]);
+  const [addressForm, setAddressForm] = useState(EMPTY_ADDRESS);
+  const [editingAddressId, setEditingAddressId] = useState("");
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     async function loadProfile() {
-      const currentUser =
-        auth.currentUser;
+      const user = auth.currentUser;
 
-      if (!currentUser) {
-        setError(
-          "Please sign in to view your profile."
-        );
-
+      if (!user) {
         setLoading(false);
-
         return;
       }
 
       try {
-        const userReference =
-          doc(
-            db,
-            "users",
-            currentUser.uid
-          );
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+        const data = snap.exists() ? snap.data() : {};
 
-        const userSnapshot =
-          await getDoc(
-            userReference
-          );
+        setProfile({
+          fullName: data.fullName || user.displayName || "",
+          phone: data.phone || "",
+          email: user.email || data.email || "",
+        });
 
-        if (userSnapshot.exists()) {
-          const data =
-            userSnapshot.data();
-
-          setProfile({
-            fullName:
-              data.fullName || "",
-
-            phone:
-              data.phone || "",
-
-            email:
-              currentUser.email ||
-              data.email ||
-              "",
-          });
-
-          setAddresses(
-            Array.isArray(
-              data.addresses
-            )
-              ? data.addresses
-              : []
-          );
-        } else {
-          setProfile({
-            fullName: "",
-
-            phone: "",
-
-            email:
-              currentUser.email ||
-              "",
-          });
-
-          setAddresses([]);
-        }
+        setAddresses(
+          Array.isArray(data.addresses) ? data.addresses : []
+        );
       } catch (error) {
-        console.error(
-          "Profile loading error:",
-          error
-        );
-
-        setError(
-          "Could not load your profile."
-        );
+        console.error("Profile load error:", error);
+        setMessage("Could not load your account.");
       } finally {
         setLoading(false);
       }
@@ -147,1156 +68,612 @@ function Profile({
     loadProfile();
   }, []);
 
-  // =====================================================
-  // PROFILE INPUT
-  // =====================================================
+  const defaultAddress = useMemo(
+    () =>
+      addresses.find((item) => item.isDefault) ||
+      addresses[0] ||
+      null,
+    [addresses]
+  );
 
-  function handleProfileChange(
-    event
-  ) {
-    const {
-      name,
-      value,
-    } = event.target;
+  function handleProfileChange(event) {
+    const { name, value } = event.target;
+    let next = value;
 
-    setProfile(
-      (previous) => ({
-        ...previous,
+    if (name === "phone") {
+      next = value.replace(/\D/g, "").slice(0, 10);
+    }
 
-        [name]:
-          value,
-      })
-    );
-
+    setProfile((current) => ({
+      ...current,
+      [name]: next,
+    }));
     setMessage("");
-    setError("");
   }
 
-  // =====================================================
-  // SAVE PROFILE
-  // =====================================================
-
-  async function saveProfile(
-    event
-  ) {
+  async function saveProfile(event) {
     event.preventDefault();
 
-    const currentUser =
-      auth.currentUser;
+    const user = auth.currentUser;
+    if (!user) return;
 
-    if (!currentUser) {
-      setError(
-        "Please sign in again."
-      );
-
+    if (!profile.fullName.trim()) {
+      setMessage("Enter your full name.");
       return;
     }
 
-    if (
-      !profile.fullName.trim()
-    ) {
-      setError(
-        "Please enter your full name."
-      );
-
-      return;
-    }
-
-    if (
-      !/^[0-9]{10}$/.test(
-        profile.phone.trim()
-      )
-    ) {
-      setError(
-        "Please enter a valid 10-digit phone number."
-      );
-
+    if (profile.phone && !/^\d{10}$/.test(profile.phone)) {
+      setMessage("Phone number must contain 10 digits.");
       return;
     }
 
     try {
-      setSaving(true);
-      setError("");
+      setSavingProfile(true);
       setMessage("");
 
       await setDoc(
-        doc(
-          db,
-          "users",
-          currentUser.uid
-        ),
+        doc(db, "users", user.uid),
         {
-          fullName:
-            profile.fullName.trim(),
-
-          phone:
-            profile.phone.trim(),
-
-          email:
-            currentUser.email ||
-            profile.email,
-
-          updatedAt:
-            serverTimestamp(),
+          fullName: profile.fullName.trim(),
+          phone: profile.phone,
+          email: user.email || profile.email,
+          updatedAt: serverTimestamp(),
         },
-        {
-          merge: true,
-        }
+        { merge: true }
       );
 
-      setMessage(
-        "Profile saved successfully."
-      );
+      setMessage("Profile updated successfully.");
     } catch (error) {
-      console.error(
-        "Profile save error:",
-        error
-      );
-
-      setError(
-        "Could not save your profile."
-      );
+      console.error("Profile save error:", error);
+      setMessage("Could not save your profile.");
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
     }
   }
 
-  // =====================================================
-  // ADDRESS INPUT
-  // =====================================================
-
-  function handleAddressChange(
-    event
-  ) {
-    const {
-      name,
-      value,
-    } = event.target;
-
-    setAddressForm(
-      (previous) => ({
-        ...previous,
-
-        [name]:
-          value,
-      })
-    );
-
+  function openNewAddress() {
+    setEditingAddressId("");
+    setAddressForm({
+      ...EMPTY_ADDRESS,
+      id: `address-${Date.now()}`,
+      fullName: profile.fullName,
+      phone: profile.phone,
+      isDefault: addresses.length === 0,
+    });
+    setShowAddressForm(true);
     setMessage("");
-    setError("");
   }
 
-  // =====================================================
-  // RESET ADDRESS FORM
-  // =====================================================
-
-  function resetAddressForm() {
+  function editAddress(address) {
+    setEditingAddressId(address.id);
     setAddressForm({
-      label: "Home",
-
-      fullName:
-        profile.fullName || "",
-
-      phone:
-        profile.phone || "",
-
-      address: "",
-
-      city: "",
-
-      state: "",
-
-      pin: "",
+      ...EMPTY_ADDRESS,
+      ...address,
     });
-
-    setEditingAddressId(
-      null
-    );
+    setShowAddressForm(true);
+    setMessage("");
   }
 
-  // =====================================================
-  // OPEN ADD ADDRESS
-  // =====================================================
+  function handleAddressChange(event) {
+    const { name, value } = event.target;
+    let next = value;
 
-  function openAddAddress() {
-    resetAddressForm();
-
-    setShowAddressForm(
-      true
-    );
-  }
-
-  // =====================================================
-  // CANCEL ADDRESS FORM
-  // =====================================================
-
-  function cancelAddressForm() {
-    resetAddressForm();
-
-    setShowAddressForm(
-      false
-    );
-  }
-
-  // =====================================================
-  // EDIT ADDRESS
-  // =====================================================
-
-  function editAddress(
-    address
-  ) {
-    setAddressForm({
-      label:
-        address.label ||
-        "Home",
-
-      fullName:
-        address.fullName ||
-        profile.fullName ||
-        "",
-
-      phone:
-        address.phone ||
-        profile.phone ||
-        "",
-
-      address:
-        address.address ||
-        "",
-
-      city:
-        address.city ||
-        "",
-
-      state:
-        address.state ||
-        "",
-
-      pin:
-        address.pin ||
-        "",
-    });
-
-    setEditingAddressId(
-      address.id
-    );
-
-    setShowAddressForm(
-      true
-    );
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  }
-
-  // =====================================================
-  // SAVE ADDRESSES TO FIRESTORE
-  // =====================================================
-
-  async function saveAddresses(
-    updatedAddresses
-  ) {
-    const currentUser =
-      auth.currentUser;
-
-    if (!currentUser) {
-      throw new Error(
-        "Please sign in again."
-      );
+    if (name === "phone") {
+      next = value.replace(/\D/g, "").slice(0, 10);
     }
+
+    if (name === "pin") {
+      next = value.replace(/\D/g, "").slice(0, 6);
+    }
+
+    setAddressForm((current) => ({
+      ...current,
+      [name]: next,
+    }));
+    setMessage("");
+  }
+
+  async function persistAddresses(nextAddresses, successMessage) {
+    const user = auth.currentUser;
+    if (!user) return;
 
     await setDoc(
-      doc(
-        db,
-        "users",
-        currentUser.uid
-      ),
+      doc(db, "users", user.uid),
       {
-        addresses:
-          updatedAddresses,
-
-        updatedAt:
-          serverTimestamp(),
+        addresses: nextAddresses,
+        updatedAt: serverTimestamp(),
       },
-      {
-        merge: true,
-      }
+      { merge: true }
     );
+
+    setAddresses(nextAddresses);
+    setMessage(successMessage);
   }
 
-  // =====================================================
-  // SAVE ADDRESS
-  // =====================================================
-
-  async function handleSaveAddress(
-    event
-  ) {
+  async function saveAddress(event) {
     event.preventDefault();
 
-    if (
-      !addressForm.fullName.trim() ||
-      !addressForm.phone.trim() ||
-      !addressForm.address.trim() ||
-      !addressForm.city.trim() ||
-      !addressForm.state.trim() ||
-      !addressForm.pin.trim()
-    ) {
-      setError(
-        "Please complete all address details."
-      );
+    const required = [
+      addressForm.label,
+      addressForm.fullName,
+      addressForm.phone,
+      addressForm.address,
+      addressForm.city,
+      addressForm.state,
+      addressForm.pin,
+    ];
 
+    if (required.some((value) => !String(value || "").trim())) {
+      setMessage("Complete all address fields.");
       return;
     }
 
-    if (
-      !/^[0-9]{10}$/.test(
-        addressForm.phone.trim()
-      )
-    ) {
-      setError(
-        "Please enter a valid 10-digit phone number."
-      );
-
+    if (!/^\d{10}$/.test(addressForm.phone)) {
+      setMessage("Phone number must contain 10 digits.");
       return;
     }
 
-    if (
-      !/^[0-9]{6}$/.test(
-        addressForm.pin.trim()
-      )
-    ) {
-      setError(
-        "Please enter a valid 6-digit PIN code."
-      );
-
+    if (!/^\d{6}$/.test(addressForm.pin)) {
+      setMessage("PIN code must contain 6 digits.");
       return;
     }
 
     try {
-      setSaving(true);
-      setError("");
+      setSavingAddress(true);
       setMessage("");
 
-      let updatedAddresses;
+      let nextAddresses;
 
-      if (
-        editingAddressId
-      ) {
-        updatedAddresses =
-          addresses.map(
-            (address) =>
-              address.id ===
-              editingAddressId
-                ? {
-                    ...address,
-
-                    ...addressForm,
-                  }
-                : address
-          );
+      if (editingAddressId) {
+        nextAddresses = addresses.map((item) =>
+          item.id === editingAddressId
+            ? { ...addressForm, id: editingAddressId }
+            : item
+        );
       } else {
-        const newAddress = {
-          id:
-            "address-" +
-            Date.now(),
-
-          ...addressForm,
-
-          isDefault:
-            addresses.length ===
-            0,
-        };
-
-        updatedAddresses = [
+        nextAddresses = [
           ...addresses,
-          newAddress,
+          {
+            ...addressForm,
+            id: addressForm.id || `address-${Date.now()}`,
+          },
         ];
       }
 
-      await saveAddresses(
-        updatedAddresses
-      );
-
-      setAddresses(
-        updatedAddresses
-      );
-
-      setMessage(
-        editingAddressId
-          ? "Address updated successfully."
-          : "Address saved successfully."
-      );
-
-      resetAddressForm();
-
-      setShowAddressForm(
-        false
-      );
-    } catch (error) {
-      console.error(
-        "Address save error:",
-        error
-      );
-
-      setError(
-        error.message ||
-        "Could not save address."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // =====================================================
-  // DELETE ADDRESS
-  // =====================================================
-
-  async function deleteAddress(
-    addressId
-  ) {
-    const confirmed =
-      window.confirm(
-        "Delete this saved address?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setError("");
-      setMessage("");
-
-      let updatedAddresses =
-        addresses.filter(
-          (address) =>
-            address.id !==
-            addressId
-        );
-
-      const removedAddress =
-        addresses.find(
-          (address) =>
-            address.id ===
-            addressId
-        );
-
-      // If default address was deleted,
-      // make first remaining address default.
-
-      if (
-        removedAddress?.isDefault &&
-        updatedAddresses.length >
-          0
-      ) {
-        updatedAddresses =
-          updatedAddresses.map(
-            (
-              address,
-              index
-            ) => ({
-              ...address,
-
-              isDefault:
-                index === 0,
-            })
-          );
+      if (addressForm.isDefault) {
+        const activeId =
+          editingAddressId || addressForm.id;
+        nextAddresses = nextAddresses.map((item) => ({
+          ...item,
+          isDefault: item.id === activeId,
+        }));
       }
 
-      await saveAddresses(
-        updatedAddresses
+      if (
+        nextAddresses.length > 0 &&
+        !nextAddresses.some((item) => item.isDefault)
+      ) {
+        nextAddresses[0] = {
+          ...nextAddresses[0],
+          isDefault: true,
+        };
+      }
+
+      await persistAddresses(
+        nextAddresses,
+        editingAddressId
+          ? "Address updated successfully."
+          : "Address added successfully."
       );
 
-      setAddresses(
-        updatedAddresses
-      );
-
-      setMessage(
-        "Address deleted."
-      );
+      setShowAddressForm(false);
+      setEditingAddressId("");
+      setAddressForm(EMPTY_ADDRESS);
     } catch (error) {
-      console.error(
-        "Delete address error:",
-        error
-      );
-
-      setError(
-        "Could not delete address."
-      );
+      console.error("Address save error:", error);
+      setMessage("Could not save the address.");
     } finally {
-      setSaving(false);
+      setSavingAddress(false);
     }
   }
 
-  // =====================================================
-  // SET DEFAULT ADDRESS
-  // =====================================================
-
-  async function setDefaultAddress(
-    addressId
-  ) {
+  async function makeDefault(id) {
     try {
-      setSaving(true);
-      setError("");
-      setMessage("");
+      const nextAddresses = addresses.map((item) => ({
+        ...item,
+        isDefault: item.id === id,
+      }));
 
-      const updatedAddresses =
-        addresses.map(
-          (address) => ({
-            ...address,
-
-            isDefault:
-              address.id ===
-              addressId,
-          })
-        );
-
-      await saveAddresses(
-        updatedAddresses
-      );
-
-      setAddresses(
-        updatedAddresses
-      );
-
-      setMessage(
+      await persistAddresses(
+        nextAddresses,
         "Default address updated."
       );
     } catch (error) {
-      console.error(
-        "Default address error:",
-        error
-      );
-
-      setError(
-        "Could not update default address."
-      );
-    } finally {
-      setSaving(false);
+      console.error("Default address error:", error);
+      setMessage("Could not update the default address.");
     }
   }
 
-  // =====================================================
-  // LOADING
-  // =====================================================
+  async function deleteAddress(id) {
+    const confirmed = window.confirm("Delete this saved address?");
+    if (!confirmed) return;
+
+    try {
+      let nextAddresses = addresses.filter((item) => item.id !== id);
+
+      if (
+        nextAddresses.length > 0 &&
+        !nextAddresses.some((item) => item.isDefault)
+      ) {
+        nextAddresses = nextAddresses.map((item, index) => ({
+          ...item,
+          isDefault: index === 0,
+        }));
+      }
+
+      await persistAddresses(nextAddresses, "Address removed.");
+
+      if (editingAddressId === id) {
+        setShowAddressForm(false);
+        setEditingAddressId("");
+      }
+    } catch (error) {
+      console.error("Delete address error:", error);
+      setMessage("Could not delete the address.");
+    }
+  }
 
   if (loading) {
     return (
-      <section className="profile-page">
-
-        <button
-          type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
-        >
-          ← BACK
-        </button>
-
-        <div className="orders-status">
-
-          <p className="small-title">
-            MY ACCOUNT
-          </p>
-
-          <h2>
-            Loading profile...
-          </h2>
-
-        </div>
-
-      </section>
+      <main className="profile-dashboard profile-loading">
+        <p>ACCOUNT</p>
+        <h1>Loading your profile…</h1>
+      </main>
     );
   }
 
-  // =====================================================
-  // PAGE
-  // =====================================================
-
   return (
-    <section className="profile-page">
-
-      {/* HEADER */}
-
-      <div className="profile-header">
-
-        <button
-          type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
-        >
-          ← BACK TO STORE
-        </button>
-
-        <p className="small-title">
-          MY ACCOUNT
-        </p>
-
-        <h1>
-          Profile
-        </h1>
-
-        <p>
-          Manage your personal
-          information and delivery
-          addresses.
-        </p>
-
-      </div>
-
-      {message && (
-        <div className="profile-success-message">
-          ✓ {message}
+    <main className="profile-dashboard">
+      <section className="profile-dashboard-hero">
+        <div>
+          <p>YOUR ACCOUNT</p>
+          <h1>Profile.</h1>
+          <span>
+            Manage your personal details and delivery addresses.
+          </span>
         </div>
-      )}
 
-      {error && (
-        <div className="auth-error">
-          {error}
+        <div className="profile-identity">
+          <div className="profile-avatar">
+            {(profile.fullName || profile.email || "L")
+              .trim()
+              .charAt(0)
+              .toUpperCase()}
+          </div>
+          <div>
+            <strong>{profile.fullName || "LUMÉ Customer"}</strong>
+            <span>{profile.email}</span>
+            <small>
+              {auth.currentUser?.emailVerified
+                ? "✓ VERIFIED ACCOUNT"
+                : "EMAIL VERIFICATION PENDING"}
+            </small>
+          </div>
         </div>
-      )}
+      </section>
 
-      <div className="profile-container">
+      <section className="profile-dashboard-grid">
+        <aside className="profile-summary-panel">
+          <p>ACCOUNT OVERVIEW</p>
 
-        {/* ===============================================
-            PERSONAL INFORMATION
-        =============================================== */}
-
-        <div className="profile-section">
-
-          <div className="profile-section-heading">
-
-            <div>
-
-              <p className="small-title">
-                PERSONAL DETAILS
-              </p>
-
-              <h2>
-                Your information
-              </h2>
-
-              <p>
-                Update your basic
-                account information.
-              </p>
-
-            </div>
-
+          <div className="profile-summary-row">
+            <span>EMAIL</span>
+            <strong>{profile.email || "—"}</strong>
           </div>
 
-          <form
-            className="profile-form"
-            onSubmit={
-              saveProfile
-            }
-          >
+          <div className="profile-summary-row">
+            <span>PHONE</span>
+            <strong>{profile.phone || "Not added"}</strong>
+          </div>
 
-            <div className="form-grid">
+          <div className="profile-summary-row">
+            <span>SAVED ADDRESSES</span>
+            <strong>{addresses.length}</strong>
+          </div>
 
-              <div className="form-group">
+          <div className="profile-summary-row">
+            <span>DEFAULT DELIVERY</span>
+            <strong>
+              {defaultAddress?.label || "Not selected"}
+            </strong>
+          </div>
 
-                <label>
-                  Full Name
-                </label>
+          <button type="button" onClick={onBack}>
+            ← BACK TO STORE
+          </button>
+        </aside>
 
+        <div className="profile-dashboard-content">
+          <section className="profile-section">
+            <div className="profile-section-heading">
+              <div>
+                <p>01 · PERSONAL DETAILS</p>
+                <h2>Your information</h2>
+              </div>
+              <span>Used for your LUMÉ account and checkout.</span>
+            </div>
+
+            <form className="profile-form" onSubmit={saveProfile}>
+              <label>
+                <span>FULL NAME</span>
                 <input
-                  type="text"
                   name="fullName"
-                  value={
-                    profile.fullName
-                  }
-                  onChange={
-                    handleProfileChange
-                  }
+                  value={profile.fullName}
+                  onChange={handleProfileChange}
                   placeholder="Your full name"
-                  required
+                  autoComplete="name"
                 />
+              </label>
 
-              </div>
-
-              <div className="form-group">
-
-                <label>
-                  Phone Number
-                </label>
-
+              <label>
+                <span>PHONE NUMBER</span>
                 <input
-                  type="tel"
                   name="phone"
-                  value={
-                    profile.phone
-                  }
-                  onChange={
-                    handleProfileChange
-                  }
+                  value={profile.phone}
+                  onChange={handleProfileChange}
                   placeholder="10-digit mobile number"
-                  maxLength="10"
                   inputMode="numeric"
-                  required
+                  maxLength="10"
+                  autoComplete="tel"
                 />
+              </label>
 
-              </div>
-
-              <div className="form-group full-width">
-
-                <label>
-                  Email Address
-                </label>
-
+              <label className="profile-email-field">
+                <span>EMAIL ADDRESS</span>
                 <input
-                  type="email"
-                  value={
-                    profile.email
-                  }
-                  disabled
+                  value={profile.email}
+                  readOnly
+                  aria-label="Email address"
                 />
+                <small>Email is managed by your sign-in account.</small>
+              </label>
 
-                <small>
-                  Your login email cannot
-                  be changed here.
-                </small>
+              <button
+                type="submit"
+                className="profile-primary-button"
+                disabled={savingProfile}
+              >
+                {savingProfile ? "SAVING…" : "SAVE PROFILE"}
+              </button>
+            </form>
+          </section>
 
+          <section className="profile-section">
+            <div className="profile-section-heading profile-address-heading">
+              <div>
+                <p>02 · SAVED ADDRESSES</p>
+                <h2>Delivery addresses</h2>
               </div>
 
-            </div>
-
-            <button
-              type="submit"
-              className="profile-save-button"
-              disabled={
-                saving
-              }
-            >
-              {saving
-                ? "SAVING..."
-                : "SAVE PROFILE"}
-            </button>
-
-          </form>
-
-        </div>
-
-        {/* ===============================================
-            SAVED ADDRESSES
-        =============================================== */}
-
-        <div className="profile-section">
-
-          <div className="saved-address-header">
-
-            <div>
-
-              <p className="small-title">
-                DELIVERY
-              </p>
-
-              <h2>
-                Saved addresses
-              </h2>
-
-              <p>
-                Save addresses for
-                faster checkout.
-              </p>
-
-            </div>
-
-            {!showAddressForm && (
               <button
                 type="button"
-                className="add-address-button"
-                onClick={
-                  openAddAddress
-                }
+                className="profile-add-address"
+                onClick={openNewAddress}
               >
                 + ADD ADDRESS
               </button>
+            </div>
+
+            {addresses.length === 0 ? (
+              <div className="profile-address-empty">
+                <span>⌂</span>
+                <h3>No saved addresses.</h3>
+                <p>Add an address to make checkout faster.</p>
+                <button type="button" onClick={openNewAddress}>
+                  ADD YOUR FIRST ADDRESS →
+                </button>
+              </div>
+            ) : (
+              <div className="profile-address-grid">
+                {addresses.map((item) => (
+                  <article
+                    className={`profile-address-card ${
+                      item.isDefault ? "is-default" : ""
+                    }`}
+                    key={item.id}
+                  >
+                    <div className="profile-address-card-top">
+                      <strong>{item.label || "Address"}</strong>
+                      {item.isDefault && <span>DEFAULT</span>}
+                    </div>
+
+                    <h3>{item.fullName}</h3>
+                    <p>{item.address}</p>
+                    <p>
+                      {item.city}, {item.state} - {item.pin}
+                    </p>
+                    <p>{item.phone}</p>
+
+                    <div className="profile-address-actions">
+                      <button type="button" onClick={() => editAddress(item)}>
+                        EDIT
+                      </button>
+
+                      {!item.isDefault && (
+                        <button
+                          type="button"
+                          onClick={() => makeDefault(item.id)}
+                        >
+                          SET DEFAULT
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => deleteAddress(item.id)}
+                      >
+                        DELETE
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             )}
-
-          </div>
-
-          {/* ADDRESS FORM */}
+          </section>
 
           {showAddressForm && (
-
-            <form
-              className="address-form"
-              onSubmit={
-                handleSaveAddress
-              }
-            >
-
-              <div className="address-form-title">
-
-                <h3>
-                  {editingAddressId
-                    ? "Edit address"
-                    : "Add new address"}
-                </h3>
-
-              </div>
-
-              <div className="address-label-options">
-
-                {[
-                  "Home",
-                  "Work",
-                  "Other",
-                ].map(
-                  (label) => (
-
-                    <button
-                      key={
-                        label
-                      }
-                      type="button"
-                      className={
-                        addressForm.label ===
-                        label
-                          ? "address-label-button active"
-                          : "address-label-button"
-                      }
-                      onClick={() =>
-                        setAddressForm(
-                          (
-                            previous
-                          ) => ({
-                            ...previous,
-
-                            label,
-                          })
-                        )
-                      }
-                    >
-                      {label}
-                    </button>
-
-                  )
-                )}
-
-              </div>
-
-              <div className="form-grid">
-
-                <div className="form-group">
-
-                  <label>
-                    Full Name
-                  </label>
-
-                  <input
-                    type="text"
-                    name="fullName"
-                    value={
-                      addressForm.fullName
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    required
-                  />
-
+            <section className="profile-section profile-address-editor">
+              <div className="profile-section-heading">
+                <div>
+                  <p>
+                    {editingAddressId
+                      ? "EDIT ADDRESS"
+                      : "NEW ADDRESS"}
+                  </p>
+                  <h2>
+                    {editingAddressId
+                      ? "Update delivery address"
+                      : "Add delivery address"}
+                  </h2>
                 </div>
-
-                <div className="form-group">
-
-                  <label>
-                    Phone Number
-                  </label>
-
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={
-                      addressForm.phone
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    maxLength="10"
-                    inputMode="numeric"
-                    required
-                  />
-
-                </div>
-
-                <div className="form-group full-width">
-
-                  <label>
-                    Address
-                  </label>
-
-                  <textarea
-                    name="address"
-                    value={
-                      addressForm.address
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    placeholder="House / Flat number, Street, Area"
-                    rows="4"
-                    required
-                  />
-
-                </div>
-
-                <div className="form-group">
-
-                  <label>
-                    City
-                  </label>
-
-                  <input
-                    type="text"
-                    name="city"
-                    value={
-                      addressForm.city
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    required
-                  />
-
-                </div>
-
-                <div className="form-group">
-
-                  <label>
-                    State
-                  </label>
-
-                  <input
-                    type="text"
-                    name="state"
-                    value={
-                      addressForm.state
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    required
-                  />
-
-                </div>
-
-                <div className="form-group">
-
-                  <label>
-                    PIN Code
-                  </label>
-
-                  <input
-                    type="text"
-                    name="pin"
-                    value={
-                      addressForm.pin
-                    }
-                    onChange={
-                      handleAddressChange
-                    }
-                    maxLength="6"
-                    inputMode="numeric"
-                    required
-                  />
-
-                </div>
-
-              </div>
-
-              <div className="address-form-actions">
-
-                <button
-                  type="submit"
-                  className="profile-save-button"
-                  disabled={
-                    saving
-                  }
-                >
-                  {saving
-                    ? "SAVING..."
-                    : editingAddressId
-                    ? "UPDATE ADDRESS"
-                    : "SAVE ADDRESS"}
-                </button>
 
                 <button
                   type="button"
-                  className="address-cancel-button"
-                  onClick={
-                    cancelAddressForm
-                  }
+                  className="profile-editor-close"
+                  onClick={() => {
+                    setShowAddressForm(false);
+                    setEditingAddressId("");
+                  }}
                 >
-                  CANCEL
+                  ×
                 </button>
-
               </div>
 
-            </form>
+              <form className="profile-address-form" onSubmit={saveAddress}>
+                <label>
+                  <span>LABEL</span>
+                  <select
+                    name="label"
+                    value={addressForm.label}
+                    onChange={handleAddressChange}
+                  >
+                    <option>Home</option>
+                    <option>Work</option>
+                    <option>Other</option>
+                  </select>
+                </label>
 
+                <label>
+                  <span>FULL NAME</span>
+                  <input
+                    name="fullName"
+                    value={addressForm.fullName}
+                    onChange={handleAddressChange}
+                    placeholder="Full name"
+                  />
+                </label>
+
+                <label>
+                  <span>PHONE</span>
+                  <input
+                    name="phone"
+                    value={addressForm.phone}
+                    onChange={handleAddressChange}
+                    inputMode="numeric"
+                    maxLength="10"
+                    placeholder="10-digit mobile number"
+                  />
+                </label>
+
+                <label className="profile-address-full">
+                  <span>ADDRESS</span>
+                  <textarea
+                    name="address"
+                    value={addressForm.address}
+                    onChange={handleAddressChange}
+                    placeholder="House / Flat number, Street, Area"
+                    rows="3"
+                  />
+                </label>
+
+                <label>
+                  <span>CITY</span>
+                  <input
+                    name="city"
+                    value={addressForm.city}
+                    onChange={handleAddressChange}
+                    placeholder="City"
+                  />
+                </label>
+
+                <label>
+                  <span>STATE</span>
+                  <input
+                    name="state"
+                    value={addressForm.state}
+                    onChange={handleAddressChange}
+                    placeholder="State"
+                  />
+                </label>
+
+                <label>
+                  <span>PIN CODE</span>
+                  <input
+                    name="pin"
+                    value={addressForm.pin}
+                    onChange={handleAddressChange}
+                    inputMode="numeric"
+                    maxLength="6"
+                    placeholder="6-digit PIN"
+                  />
+                </label>
+
+                <label className="profile-default-check">
+                  <input
+                    type="checkbox"
+                    checked={addressForm.isDefault}
+                    onChange={(event) =>
+                      setAddressForm((current) => ({
+                        ...current,
+                        isDefault: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>MAKE THIS MY DEFAULT ADDRESS</span>
+                </label>
+
+                <div className="profile-editor-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddressForm(false);
+                      setEditingAddressId("");
+                    }}
+                  >
+                    CANCEL
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="profile-primary-button"
+                    disabled={savingAddress}
+                  >
+                    {savingAddress ? "SAVING…" : "SAVE ADDRESS"}
+                  </button>
+                </div>
+              </form>
+            </section>
           )}
 
-          {/* SAVED ADDRESS LIST */}
-
-          {!showAddressForm &&
-            addresses.length ===
-              0 && (
-
-              <div className="no-addresses">
-
-                <h3>
-                  No saved addresses
-                </h3>
-
-                <p>
-                  Add your first
-                  delivery address for
-                  faster checkout.
-                </p>
-
-              </div>
-
-            )}
-
-          {!showAddressForm &&
-            addresses.length >
-              0 && (
-
-              <div className="saved-address-grid">
-
-                {addresses.map(
-                  (address) => (
-
-                    <article
-                      className={
-                        address.isDefault
-                          ? "saved-address-card default"
-                          : "saved-address-card"
-                      }
-                      key={
-                        address.id
-                      }
-                    >
-
-                      <div className="saved-address-top">
-
-                        <span className="address-type">
-                          {
-                            address.label
-                          }
-                        </span>
-
-                        {address.isDefault && (
-                          <span className="default-address-badge">
-                            DEFAULT
-                          </span>
-                        )}
-
-                      </div>
-
-                      <h3>
-                        {
-                          address.fullName
-                        }
-                      </h3>
-
-                      <p>
-                        {
-                          address.address
-                        }
-                      </p>
-
-                      <p>
-                        {
-                          address.city
-                        }
-                        ,{" "}
-                        {
-                          address.state
-                        }{" "}
-                        -{" "}
-                        {
-                          address.pin
-                        }
-                      </p>
-
-                      <p>
-                        Phone:{" "}
-                        {
-                          address.phone
-                        }
-                      </p>
-
-                      <div className="saved-address-actions">
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            editAddress(
-                              address
-                            )
-                          }
-                        >
-                          EDIT
-                        </button>
-
-                        {!address.isDefault && (
-
-                          <button
-                            type="button"
-                            disabled={
-                              saving
-                            }
-                            onClick={() =>
-                              setDefaultAddress(
-                                address.id
-                              )
-                            }
-                          >
-                            SET DEFAULT
-                          </button>
-
-                        )}
-
-                        <button
-                          type="button"
-                          className="delete-address-button"
-                          disabled={
-                            saving
-                          }
-                          onClick={() =>
-                            deleteAddress(
-                              address.id
-                            )
-                          }
-                        >
-                          DELETE
-                        </button>
-
-                      </div>
-
-                    </article>
-
-                  )
-                )}
-
-              </div>
-
-            )}
-
+          {message && (
+            <div className="profile-message" role="status">
+              {message}
+            </div>
+          )}
         </div>
-
-      </div>
-
-    </section>
+      </section>
+    </main>
   );
 }
 

@@ -1,0 +1,115 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        (
+          userDoc().data.role == "admin" ||
+          userDoc().data.isAdmin == true
+        );
+    }
+
+    // =========================================================
+    // USERS
+    // =========================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Users can create/update only their own account document.
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+
+      // Prevent customers from deleting their account document
+      // accidentally through the storefront.
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================
+    // PRODUCTS
+    // =========================================================
+    match /products/{productId} {
+      // Store catalogue is public.
+      allow read: if true;
+
+      // Product creation/deletion and normal edits are admin-only.
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        ||
+        (
+          // TEMPORARY storefront stock transaction support.
+          // This keeps the current LUMÉ client checkout/cancellation
+          // working while blocking customers from editing name/price/etc.
+          signedIn()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(["stock", "updatedAt"])
+          && request.resource.data.stock is int
+          && request.resource.data.stock >= 0
+        );
+    }
+
+    // =========================================================
+    // ORDERS
+    // =========================================================
+    match /orders/{orderId} {
+      // Customers can read only their own orders.
+      allow read: if signedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdmin()
+        );
+
+      // Current checkout creates orders from the signed-in client.
+      // Require ownership and an initial Placed status.
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == "Placed"
+        && request.resource.data.orderStatus == "Placed";
+
+      // Admins may manage the full order lifecycle.
+      allow update: if isAdmin()
+        ||
+        (
+          // Customers may only cancel their own Placed/Confirmed orders.
+          signedIn()
+          && resource.data.userId == request.auth.uid
+          && resource.data.status in ["Placed", "Confirmed"]
+          && request.resource.data.status == "Cancelled"
+          && request.resource.data.orderStatus == "Cancelled"
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                "status",
+                "orderStatus",
+                "cancelledBy",
+                "cancelledAt",
+                "stockRestored",
+                "updatedAt"
+              ])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // Deny everything not explicitly allowed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

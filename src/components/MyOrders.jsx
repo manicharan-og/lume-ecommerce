@@ -1,7 +1,4 @@
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   collection,
@@ -13,163 +10,227 @@ import {
   where,
 } from "firebase/firestore";
 
-import {
-  auth,
-  db,
-} from "../firebase";
+import { auth, db } from "../firebase";
 
-function MyOrders({
-  onBack,
-}) {
-  // =====================================================
-  // STATE
-  // =====================================================
+const TRACKING_STEPS = [
+  "Placed",
+  "Confirmed",
+  "Packed",
+  "Shipped",
+  "Out for Delivery",
+  "Delivered",
+];
 
-  const [
-    orders,
-    setOrders,
-  ] = useState([]);
+function normaliseStatus(order = {}) {
+  const clean = String(
+    order.orderStatus ||
+      order.status ||
+      "Placed"
+  )
+    .trim()
+    .toLowerCase();
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  if (clean === "confirmed") return "Confirmed";
+  if (clean === "packed") return "Packed";
+  if (clean === "shipped") return "Shipped";
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  if (
+    clean === "out for delivery" ||
+    clean === "out-for-delivery" ||
+    clean === "out_for_delivery"
+  ) {
+    return "Out for Delivery";
+  }
+
+  if (clean === "delivered") return "Delivered";
+
+  if (
+    clean === "cancelled" ||
+    clean === "canceled"
+  ) {
+    return "Cancelled";
+  }
+
+  return "Placed";
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return "Recently";
+
+  try {
+    const date = timestamp.toDate
+      ? timestamp.toDate()
+      : new Date(timestamp);
+
+    return date.toLocaleDateString(
+      "en-IN",
+      {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  } catch {
+    return "Recently";
+  }
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return "";
+
+  try {
+    const date = timestamp.toDate
+      ? timestamp.toDate()
+      : new Date(timestamp);
+
+    return date.toLocaleTimeString(
+      "en-IN",
+      {
+        hour: "numeric",
+        minute: "2-digit",
+      }
+    );
+  } catch {
+    return "";
+  }
+}
+
+function getPaymentName(order = {}) {
+  if (order.paymentMethodName) {
+    return order.paymentMethodName;
+  }
+
+  const value = String(
+    order.paymentMethod ||
+      order.payment ||
+      ""
+  ).toLowerCase();
+
+  if (value === "cod") {
+    return "Cash on Delivery";
+  }
+
+  if (value === "upi") {
+    return "UPI";
+  }
+
+  if (value === "card") {
+    return "Credit / Debit Card";
+  }
+
+  return value || "Not available";
+}
+
+function getAddress(order = {}) {
+  const value =
+    order.deliveryAddress;
+
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return [
+    value.address,
+    value.city,
+    value.state,
+    value.pin,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function fallbackImage(item = {}) {
+  const value = `${item.name || ""} ${item.category || ""}`.toLowerCase();
+
+  if (value.includes("trouser") || value.includes("bottom")) {
+    return "/images/trousers.jpg";
+  }
+
+  if (value.includes("hoodie")) {
+    return "/images/hoodie.jpg";
+  }
+
+  if (
+    value.includes("t-shirt") ||
+    value.includes("tshirt") ||
+    value.includes("tee")
+  ) {
+    return "/images/tshirt.jpg";
+  }
+
+  return "/images/shirt.jpg";
+}
+
+function resolveOrderImage(item = {}) {
+  const raw = String(
+    item.image ||
+      item.imageUrl ||
+      ""
+  ).trim();
+
+  if (!raw) return fallbackImage(item);
+
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  ) {
+    return raw;
+  }
+
+  if (raw.startsWith("/")) {
+    return raw;
+  }
+
+  if (raw.startsWith("images/")) {
+    return `/${raw}`;
+  }
+
+  return `/images/${raw.replace(/^.*[\\/]/, "")}`;
+}
+
+function MyOrders({ onBack }) {
+  const [orders, setOrders] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
 
   const [
     cancellingOrderId,
     setCancellingOrderId,
   ] = useState("");
 
-  // =====================================================
-  // ORDER TRACKING STEPS
-  // =====================================================
+  const [filter, setFilter] =
+    useState("All");
 
-  const trackingSteps = [
-    "Placed",
-    "Confirmed",
-    "Packed",
-    "Shipped",
-    "Out for Delivery",
-    "Delivered",
-  ];
-
-  // =====================================================
-  // NORMALIZE ORDER STATUS
-  // =====================================================
-
-  function getOrderStatus(
-    order
-  ) {
-    const status =
-      order.orderStatus ||
-      order.status ||
-      "Placed";
-
-    const cleanStatus =
-      status
-        .toString()
-        .trim()
-        .toLowerCase();
-
-    if (
-      cleanStatus ===
-      "placed"
-    ) {
-      return "Placed";
-    }
-
-    if (
-      cleanStatus ===
-      "confirmed"
-    ) {
-      return "Confirmed";
-    }
-
-    if (
-      cleanStatus ===
-      "packed"
-    ) {
-      return "Packed";
-    }
-
-    if (
-      cleanStatus ===
-      "shipped"
-    ) {
-      return "Shipped";
-    }
-
-    if (
-      cleanStatus ===
-        "out for delivery" ||
-      cleanStatus ===
-        "out-for-delivery" ||
-      cleanStatus ===
-        "out_for_delivery"
-    ) {
-      return "Out for Delivery";
-    }
-
-    if (
-      cleanStatus ===
-      "delivered"
-    ) {
-      return "Delivered";
-    }
-
-    if (
-      cleanStatus ===
-        "cancelled" ||
-      cleanStatus ===
-        "canceled"
-    ) {
-      return "Cancelled";
-    }
-
-    return "Placed";
-  }
-
-  // =====================================================
-  // REAL-TIME LOAD CUSTOMER ORDERS
-  // =====================================================
+  const [expandedOrderId, setExpandedOrderId] =
+    useState("");
 
   useEffect(() => {
     const currentUser =
       auth.currentUser;
 
-    if (
-      !currentUser
-    ) {
+    if (!currentUser) {
       setError(
         "Please sign in to view your orders."
       );
-
-      setLoading(
-        false
-      );
-
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-
-    setError("");
-
-    const ordersReference =
-      collection(
-        db,
-        "orders"
-      );
+    const ordersRef =
+      collection(db, "orders");
 
     const customerOrdersQuery =
       query(
-        ordersReference,
-
+        ordersRef,
         where(
           "userId",
           "==",
@@ -180,240 +241,133 @@ function MyOrders({
     const unsubscribe =
       onSnapshot(
         customerOrdersQuery,
-
         (snapshot) => {
-          const loadedOrders =
+          const loaded =
             snapshot.docs.map(
               (document) => ({
-                id:
-                  document.id,
-
+                id: document.id,
                 ...document.data(),
               })
             );
 
-          loadedOrders.sort(
-            (a, b) => {
-              const timeA =
-                a.createdAt?.seconds ||
-                0;
+          loaded.sort((a, b) => {
+            const timeA =
+              a.createdAt?.seconds ||
+              0;
 
-              const timeB =
-                b.createdAt?.seconds ||
-                0;
+            const timeB =
+              b.createdAt?.seconds ||
+              0;
 
-              return (
-                timeB -
-                timeA
-              );
-            }
-          );
+            return timeB - timeA;
+          });
 
-          setOrders(
-            loadedOrders
-          );
-
-          setLoading(
-            false
-          );
+          setOrders(loaded);
+          setLoading(false);
+          setError("");
         },
-
-        (firebaseError) => {
+        (snapshotError) => {
           console.error(
-            "Real-time customer orders error:",
-            firebaseError
+            "Customer orders error:",
+            snapshotError
           );
 
-          if (
-            firebaseError.code ===
-            "permission-denied"
-          ) {
-            setError(
-              "Permission denied. Please check your Firestore rules."
-            );
-          } else {
-            setError(
-              "Could not load your orders."
-            );
-          }
-
-          setLoading(
-            false
+          setError(
+            snapshotError.code ===
+              "permission-denied"
+              ? "Permission denied. Please check your Firestore rules."
+              : "Could not load your orders."
           );
+
+          setLoading(false);
         }
       );
 
-    return () => {
-      unsubscribe();
-    };
+    return unsubscribe;
   }, []);
 
-  // =====================================================
-  // FORMAT DATE
-  // =====================================================
+  const orderCounts = useMemo(() => {
+    const result = {
+      All: orders.length,
+      Active: 0,
+      Delivered: 0,
+      Cancelled: 0,
+    };
 
-  function formatDate(
-    timestamp
-  ) {
-    if (!timestamp) {
-      return "Recently";
-    }
+    orders.forEach((order) => {
+      const status =
+        normaliseStatus(order);
 
-    try {
-      const date =
-        timestamp.toDate
-          ? timestamp.toDate()
-          : new Date(
-              timestamp
-            );
+      if (
+        status === "Delivered"
+      ) {
+        result.Delivered += 1;
+      } else if (
+        status === "Cancelled"
+      ) {
+        result.Cancelled += 1;
+      } else {
+        result.Active += 1;
+      }
+    });
 
-      return date.toLocaleDateString(
-        "en-IN",
-        {
-          day:
-            "numeric",
+    return result;
+  }, [orders]);
 
-          month:
-            "long",
+  const visibleOrders =
+    useMemo(() => {
+      if (filter === "All") {
+        return orders;
+      }
 
-          year:
-            "numeric",
-        }
+      if (filter === "Active") {
+        return orders.filter(
+          (order) => {
+            const status =
+              normaliseStatus(order);
+
+            return ![
+              "Delivered",
+              "Cancelled",
+            ].includes(status);
+          }
+        );
+      }
+
+      return orders.filter(
+        (order) =>
+          normaliseStatus(order) ===
+          filter
       );
-    } catch {
-      return "Recently";
-    }
-  }
+    }, [filter, orders]);
 
-  // =====================================================
-  // PAYMENT NAME
-  // =====================================================
-
-  function getPaymentName(
-    payment
-  ) {
-    if (
-      payment === "cod"
-    ) {
-      return "Cash on Delivery";
-    }
-
-    if (
-      payment === "upi"
-    ) {
-      return "UPI";
-    }
-
-    if (
-      payment === "card"
-    ) {
-      return "Credit / Debit Card";
-    }
-
-    return (
-      payment ||
-      "Not available"
-    );
-  }
-
-  // =====================================================
-  // DELIVERY ADDRESS
-  // =====================================================
-
-  function getDeliveryAddress(
-    order
-  ) {
-    const delivery =
-      order.deliveryAddress;
-
-    if (!delivery) {
-      return "";
-    }
-
-    if (
-      typeof delivery ===
-      "string"
-    ) {
-      return delivery;
-    }
-
-    return [
-      delivery.address,
-      delivery.city,
-      delivery.state,
-      delivery.pin,
-    ]
-      .filter(Boolean)
-      .join(", ");
-  }
-
-  // =====================================================
-  // CURRENT TRACKING STEP
-  // =====================================================
-
-  function getCurrentStepIndex(
-    status
-  ) {
-    return trackingSteps.indexOf(
-      status
-    );
-  }
-
-  // =====================================================
-  // CAN CUSTOMER CANCEL?
-  // =====================================================
-
-  function canCancelOrder(
-    status
-  ) {
+  function canCancel(status) {
     return [
       "Placed",
       "Confirmed",
-    ].includes(
-      status
-    );
+    ].includes(status);
   }
 
-  // =====================================================
-  // CANCEL ORDER
-  // RESTORE STOCK AT THE SAME TIME
-  // =====================================================
-
-  async function cancelOrder(
-    order
-  ) {
+  async function cancelOrder(order) {
     const currentUser =
       auth.currentUser;
 
-    if (
-      !currentUser
-    ) {
+    if (!currentUser) {
       alert(
         "Please sign in again."
       );
-
       return;
     }
 
     const currentStatus =
-      getOrderStatus(
-        order
-      );
+      normaliseStatus(order);
 
-    if (
-      !canCancelOrder(
-        currentStatus
-      )
-    ) {
+    if (!canCancel(currentStatus)) {
       alert(
         "This order can no longer be cancelled."
       );
-
       return;
     }
-
-    // Make sure order belongs
-    // to current customer.
 
     if (
       order.userId !==
@@ -422,7 +376,6 @@ function MyOrders({
       alert(
         "You cannot cancel this order."
       );
-
       return;
     }
 
@@ -433,72 +386,42 @@ function MyOrders({
 
     const confirmed =
       window.confirm(
-        "Are you sure you want to cancel order " +
-          orderNumber +
-          "?"
+        `Cancel order ${orderNumber}? Stock will be restored automatically.`
       );
 
-    if (
-      !confirmed
-    ) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       setCancellingOrderId(
         order.id
       );
 
-      const orderReference =
-        doc(
-          db,
-          "orders",
-          order.id
-        );
-
-      // =================================================
-      // TRANSACTION
-      //
-      // 1. Read latest order
-      // 2. Verify ownership/status
-      // 3. Read products
-      // 4. Restore stock
-      // 5. Cancel order
-      //
-      // If anything fails, nothing is changed.
-      // =================================================
-
       await runTransaction(
         db,
-        async (
-          transaction
-        ) => {
-          // ===============================================
-          // READ CURRENT ORDER
-          // ===============================================
-
-          const orderSnapshot =
-            await transaction.get(
-              orderReference
+        async (transaction) => {
+          const orderRef =
+            doc(
+              db,
+              "orders",
+              order.id
             );
 
-          if (
-            !orderSnapshot.exists()
-          ) {
+          const orderSnap =
+            await transaction.get(
+              orderRef
+            );
+
+          if (!orderSnap.exists()) {
             throw new Error(
-              "This order no longer exists."
+              "Order no longer exists."
             );
           }
 
-          const storedOrder =
-            orderSnapshot.data();
-
-          // ===============================================
-          // VERIFY OWNER
-          // ===============================================
+          const liveOrder =
+            orderSnap.data();
 
           if (
-            storedOrder.userId !==
+            liveOrder.userId !==
             currentUser.uid
           ) {
             throw new Error(
@@ -506,208 +429,125 @@ function MyOrders({
             );
           }
 
-          // ===============================================
-          // CHECK CURRENT STATUS FROM FIRESTORE
-          // ===============================================
-
-          const storedStatus =
-            getOrderStatus(
-              storedOrder
+          const liveStatus =
+            normaliseStatus(
+              liveOrder
             );
 
           if (
-            !canCancelOrder(
-              storedStatus
+            !canCancel(
+              liveStatus
             )
           ) {
-            if (
-              storedStatus ===
-              "Cancelled"
-            ) {
-              throw new Error(
-                "This order has already been cancelled."
-              );
-            }
-
             throw new Error(
               "This order can no longer be cancelled."
             );
           }
 
-          // ===============================================
-          // DOUBLE RESTOCK PROTECTION
-          // ===============================================
-
-          if (
-            storedOrder.stockRestored ===
-            true
-          ) {
-            throw new Error(
-              "Stock has already been restored for this order."
-            );
-          }
-
-          // ===============================================
-          // VALIDATE ORDER ITEMS
-          // ===============================================
-
-          const orderItems =
-            Array.isArray(
-              storedOrder.items
-            )
-              ? storedOrder.items
-              : [];
-
-          if (
-            orderItems.length ===
-            0
-          ) {
-            throw new Error(
-              "No products were found in this order."
-            );
-          }
-
-          // ===============================================
-          // READ ALL PRODUCTS FIRST
-          // ===============================================
-
-          const productRestores =
-            [];
+          const quantityByProductId =
+            new Map();
 
           for (
             const item
-            of orderItems
+            of Array.isArray(
+              liveOrder.items
+            )
+              ? liveOrder.items
+              : []
           ) {
             const productId =
-              item.productId ||
-              item.id;
-
-            // Older order records may not
-            // have productId.
-
-            if (
-              !productId
-            ) {
-              console.warn(
-                "Product ID missing for:",
-                item.name
+              String(
+                item.productId ||
+                  item.id ||
+                  ""
               );
 
+            const quantity =
+              Number(
+                item.quantity ||
+                  0
+              );
+
+            if (
+              !productId ||
+              quantity <= 0
+            ) {
               continue;
             }
 
-            const productReference =
+            quantityByProductId.set(
+              productId,
+              (
+                quantityByProductId.get(
+                  productId
+                ) || 0
+              ) + quantity
+            );
+          }
+
+          const productRows = [];
+
+          for (
+            const [
+              productId,
+              quantity,
+            ]
+            of quantityByProductId.entries()
+          ) {
+            const productRef =
               doc(
                 db,
                 "products",
-                String(
-                  productId
-                )
-              );
-
-            const productSnapshot =
-              await transaction.get(
-                productReference
-              );
-
-            // If admin deleted the product,
-            // do not fail entire cancellation.
-
-            if (
-              !productSnapshot.exists()
-            ) {
-              console.warn(
-                "Product no longer exists:",
                 productId
               );
 
-              continue;
-            }
-
-            const productData =
-              productSnapshot.data();
-
-            const currentStock =
-              Number(
-                productData.stock ??
-                  0
-              );
-
-            const orderedQuantity =
-              Number(
-                item.quantity ??
-                  0
+            const productSnap =
+              await transaction.get(
+                productRef
               );
 
             if (
-              orderedQuantity <=
-              0
+              productSnap.exists()
             ) {
-              continue;
+              productRows.push({
+                productRef,
+                currentStock:
+                  Number(
+                    productSnap.data()
+                      .stock || 0
+                  ),
+                quantity,
+              });
             }
-
-            productRestores.push({
-              productReference,
-
-              currentStock,
-
-              orderedQuantity,
-            });
           }
 
-          // ===============================================
-          // RESTORE PRODUCT STOCK
-          // ===============================================
-
           for (
-            const restore
-            of productRestores
+            const row
+            of productRows
           ) {
-            const restoredStock =
-              restore.currentStock +
-              restore.orderedQuantity;
-
             transaction.update(
-              restore.productReference,
+              row.productRef,
               {
                 stock:
-                  restoredStock,
-
+                  row.currentStock +
+                  row.quantity,
                 updatedAt:
                   serverTimestamp(),
               }
             );
           }
 
-          // ===============================================
-          // CANCEL ORDER
-          // ===============================================
-
           transaction.update(
-            orderReference,
+            orderRef,
             {
-              status:
-                "Cancelled",
-
+              status: "Cancelled",
               orderStatus:
                 "Cancelled",
-
               cancelledBy:
                 "customer",
-
               cancelledAt:
                 serverTimestamp(),
-
-              // Prevent the same
-              // order from restoring
-              // inventory twice.
-
-              stockRestored:
-                true,
-
-              stockRestoredAt:
-                serverTimestamp(),
-
+              stockRestored: true,
               updatedAt:
                 serverTimestamp(),
             }
@@ -716,32 +556,18 @@ function MyOrders({
       );
 
       alert(
-        "Your order has been cancelled successfully and the product stock has been restored."
+        "Your order has been cancelled successfully."
       );
-
-      // onSnapshot will update
-      // the page automatically.
-    } catch (
-      firebaseError
-    ) {
+    } catch (cancelError) {
       console.error(
         "Order cancellation error:",
-        firebaseError
+        cancelError
       );
 
-      if (
-        firebaseError.code ===
-        "permission-denied"
-      ) {
-        alert(
-          "Permission denied. Please update your Firestore rules for cancellation stock restoration."
-        );
-      } else {
-        alert(
-          firebaseError?.message ||
+      alert(
+        cancelError?.message ||
           "Could not cancel your order. Please try again."
-        );
-      }
+      );
     } finally {
       setCancellingOrderId(
         ""
@@ -749,626 +575,558 @@ function MyOrders({
     }
   }
 
-  // =====================================================
-  // LOADING
-  // =====================================================
-
-  if (
-    loading
+  function renderStatusScreen(
+    title,
+    text
   ) {
     return (
-      <section className="orders-page">
-
+      <section className="orders-page orders-state-page">
         <button
           type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
+          className="orders-back"
+          onClick={onBack}
         >
           ← BACK
         </button>
 
-        <div className="orders-status">
-
-          <p className="small-title">
-            MY ORDERS
-          </p>
-
-          <h2>
-            Loading your orders...
-          </h2>
-
-        </div>
-
-      </section>
-    );
-  }
-
-  // =====================================================
-  // ERROR
-  // =====================================================
-
-  if (
-    error
-  ) {
-    return (
-      <section className="orders-page">
-
-        <button
-          type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
-        >
-          ← BACK
-        </button>
-
-        <div className="orders-status">
-
-          <p className="small-title">
-            MY ORDERS
-          </p>
-
-          <h2>
-            Something went wrong
-          </h2>
-
-          <p>
-            {
-              error
-            }
-          </p>
-
-        </div>
-
-      </section>
-    );
-  }
-
-  // =====================================================
-  // NO ORDERS
-  // =====================================================
-
-  if (
-    orders.length ===
-    0
-  ) {
-    return (
-      <section className="orders-page">
-
-        <button
-          type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
-        >
-          ← BACK
-        </button>
-
-        <div className="orders-status">
-
-          <p className="small-title">
-            MY ORDERS
-          </p>
-
-          <h1>
-            No orders yet
-          </h1>
-
-          <p>
-            Once you place an order,
-            it will appear here.
-          </p>
+        <div className="orders-state">
+          <p>MY ORDERS</p>
+          <h1>{title}</h1>
+          {text && <span>{text}</span>}
 
           <button
             type="button"
-            className="shop-button"
-            onClick={
-              onBack
-            }
+            onClick={onBack}
           >
-            START SHOPPING →
+            RETURN TO STORE →
           </button>
-
         </div>
-
       </section>
     );
   }
 
-  // =====================================================
-  // ORDERS PAGE
-  // =====================================================
+  if (loading) {
+    return renderStatusScreen(
+      "Loading your orders…",
+      "Your latest order information is being synced."
+    );
+  }
+
+  if (error) {
+    return renderStatusScreen(
+      "Something went wrong",
+      error
+    );
+  }
+
+  if (orders.length === 0) {
+    return renderStatusScreen(
+      "No orders yet",
+      "Once you place an order, it will appear here."
+    );
+  }
 
   return (
-    <section className="orders-page">
-
-      {/* HEADER */}
-
-      <div className="orders-header">
-
+    <main className="orders-page lume-orders">
+      <section className="orders-top">
         <button
           type="button"
-          className="back-button"
-          onClick={
-            onBack
-          }
+          className="orders-back"
+          onClick={onBack}
         >
-          ← BACK
+          ← BACK TO STORE
         </button>
 
-        <div>
+        <div className="orders-title-row">
+          <div>
+            <p>YOUR ACCOUNT</p>
+            <h1>My Orders.</h1>
+            <span>
+              Track, review and manage your LUMÉ purchases in real time.
+            </span>
+          </div>
 
-          <p className="small-title">
-            YOUR ACCOUNT
-          </p>
-
-          <h1>
-            My Orders
-          </h1>
-
-          <p>
-            Track and review your
-            Lumé purchases in real time.
-          </p>
-
+          <strong>
+            {orders.length} ORDER
+            {orders.length === 1
+              ? ""
+              : "S"}
+          </strong>
         </div>
+      </section>
 
-      </div>
+      <nav className="orders-filters">
+        {[
+          "All",
+          "Active",
+          "Delivered",
+          "Cancelled",
+        ].map((value) => (
+          <button
+            type="button"
+            key={value}
+            className={
+              filter === value
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setFilter(value)
+            }
+          >
+            {value}
+            <span>
+              {orderCounts[value]}
+            </span>
+          </button>
+        ))}
+      </nav>
 
-      {/* ORDERS */}
+      <section className="orders-list">
+        {visibleOrders.length === 0 ? (
+          <div className="orders-filter-empty">
+            <p>NO ORDERS</p>
+            <h2>
+              Nothing in this view.
+            </h2>
+            <button
+              type="button"
+              onClick={() =>
+                setFilter("All")
+              }
+            >
+              SHOW ALL ORDERS →
+            </button>
+          </div>
+        ) : (
+          visibleOrders.map(
+            (order) => {
+              const status =
+                normaliseStatus(
+                  order
+                );
 
-      <div className="orders-list">
+              const stepIndex =
+                TRACKING_STEPS.indexOf(
+                  status
+                );
 
-        {orders.map(
-          (order) => {
-            const currentStatus =
-              getOrderStatus(
-                order
-              );
+              const cancelled =
+                status ===
+                "Cancelled";
 
-            const currentStepIndex =
-              getCurrentStepIndex(
-                currentStatus
-              );
+              const delivered =
+                status ===
+                "Delivered";
 
-            const isCancelled =
-              currentStatus ===
-              "Cancelled";
+              const address =
+                getAddress(order);
 
-            const cancellationAllowed =
-              canCancelOrder(
-                currentStatus
-              );
+              const items =
+                Array.isArray(
+                  order.items
+                )
+                  ? order.items
+                  : [];
 
-            const deliveryAddress =
-              getDeliveryAddress(
-                order
-              );
+              const expanded =
+                expandedOrderId ===
+                order.id;
 
-            return (
-              <article
-                className="order-card"
-                key={
-                  order.id
-                }
-              >
+              const orderNumber =
+                order.orderNumber ||
+                order.orderId ||
+                order.id;
 
-                {/* ORDER HEADER */}
+              const paymentStatus =
+                order.paymentStatus ||
+                "Pending";
 
-                <div className="order-card-header">
-
-                  <div>
-
-                    <span>
-                      ORDER
-                    </span>
-
-                    <strong>
-                      {order.orderNumber ||
-                        order.orderId ||
-                        order.id}
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <span>
-                      PLACED ON
-                    </span>
-
-                    <strong>
-                      {formatDate(
-                        order.createdAt
-                      )}
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <span>
-                      TOTAL
-                    </span>
-
-                    <strong>
-                      ₹
-                      {Number(
-                        order.total ||
-                          0
-                      ).toLocaleString(
-                        "en-IN"
-                      )}
-                    </strong>
-
-                  </div>
-
-                  <div>
-
-                    <span>
-                      STATUS
-                    </span>
-
-                    <strong
-                      className={
-                        currentStatus ===
-                        "Delivered"
-                          ? "order-status delivered"
-                          : isCancelled
-                            ? "order-status cancelled"
-                            : "order-status"
-                      }
-                    >
-                      {
-                        currentStatus
-                      }
-                    </strong>
-
-                  </div>
-
-                </div>
-
-                {/* TRACKING */}
-
-                {!isCancelled ? (
-
-                  <div className="order-tracker">
-
-                    <div className="order-tracker-title">
-
-                      <p className="small-title">
-                        ORDER TRACKING
-                      </p>
-
+              return (
+                <article
+                  className={`premium-order-card ${
+                    cancelled
+                      ? "is-cancelled"
+                      : delivered
+                        ? "is-delivered"
+                        : ""
+                  }`}
+                  key={order.id}
+                >
+                  <header className="premium-order-header">
+                    <div>
+                      <span>ORDER</span>
                       <strong>
-                        {
-                          currentStatus
-                        }
+                        {orderNumber}
                       </strong>
-
                     </div>
 
-                    <div className="tracking-steps">
-
-                      {trackingSteps.map(
-                        (
-                          step,
-                          index
-                        ) => {
-                          const completed =
-                            index <=
-                            currentStepIndex;
-
-                          const current =
-                            index ===
-                            currentStepIndex;
-
-                          return (
-                            <div
-                              className={[
-                                "tracking-step",
-
-                                completed
-                                  ? "completed"
-                                  : "",
-
-                                current
-                                  ? "current"
-                                  : "",
-                              ]
-                                .filter(
-                                  Boolean
-                                )
-                                .join(
-                                  " "
-                                )}
-                              key={
-                                step
-                              }
-                            >
-
-                              <div className="tracking-marker">
-
-                                <div className="tracking-circle">
-
-                                  {completed
-                                    ? "✓"
-                                    : index +
-                                      1}
-
-                                </div>
-
-                                {index <
-                                  trackingSteps.length -
-                                    1 && (
-
-                                  <div
-                                    className={
-                                      index <
-                                      currentStepIndex
-                                        ? "tracking-line completed"
-                                        : "tracking-line"
-                                    }
-                                  />
-
-                                )}
-
-                              </div>
-
-                              <div className="tracking-label">
-
-                                <strong>
-                                  {
-                                    step
-                                  }
-                                </strong>
-
-                                {current && (
-
-                                  <small>
-                                    Current status
-                                  </small>
-
-                                )}
-
-                              </div>
-
-                            </div>
-                          );
-                        }
-                      )}
-
-                    </div>
-
-                  </div>
-
-                ) : (
-
-                  <div className="order-tracker">
-
-                    <div className="cancelled-order-message">
-
-                      <span>
-                        ×
-                      </span>
-
-                      <div>
-
-                        <strong>
-                          Order Cancelled
-                        </strong>
-
-                        <p>
-                          This order has
-                          been cancelled.
-                        </p>
-
-                        {order.stockRestored ===
-                          true && (
-                          <small>
-                            Product stock restored
-                          </small>
+                    <div>
+                      <span>PLACED</span>
+                      <strong>
+                        {formatDate(
+                          order.createdAt
                         )}
+                      </strong>
+                      <small>
+                        {formatTime(
+                          order.createdAt
+                        )}
+                      </small>
+                    </div>
 
+                    <div>
+                      <span>ITEMS</span>
+                      <strong>
+                        {Number(
+                          order.itemCount ||
+                            items.reduce(
+                              (
+                                total,
+                                item
+                              ) =>
+                                total +
+                                Number(
+                                  item.quantity ||
+                                    0
+                                ),
+                              0
+                            )
+                        )}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>TOTAL</span>
+                      <strong>
+                        ₹
+                        {Number(
+                          order.total ||
+                            0
+                        ).toLocaleString(
+                          "en-IN"
+                        )}
+                      </strong>
+                    </div>
+
+                    <div className="order-status-column">
+                      <span>STATUS</span>
+                      <strong
+                        className={`premium-order-status status-${status
+                          .toLowerCase()
+                          .replaceAll(
+                            " ",
+                            "-"
+                          )}`}
+                      >
+                        {status}
+                      </strong>
+                    </div>
+                  </header>
+
+                  {!cancelled ? (
+                    <section className="premium-tracking">
+                      <div className="tracking-heading">
+                        <div>
+                          <p>ORDER TRACKING</p>
+                          <h2>
+                            {delivered
+                              ? "Delivered."
+                              : `${status}.`}
+                          </h2>
+                        </div>
+
+                        <span>
+                          {delivered
+                            ? "Your order has been completed."
+                            : "Live status updates"}
+                        </span>
                       </div>
 
-                    </div>
+                      <div className="premium-tracking-steps">
+                        {TRACKING_STEPS.map(
+                          (
+                            step,
+                            index
+                          ) => {
+                            const complete =
+                              index <=
+                              stepIndex;
 
-                  </div>
+                            const current =
+                              index ===
+                              stepIndex;
 
-                )}
+                            return (
+                              <div
+                                className={`premium-track-step ${
+                                  complete
+                                    ? "complete"
+                                    : ""
+                                } ${
+                                  current
+                                    ? "current"
+                                    : ""
+                                }`}
+                                key={step}
+                              >
+                                <div className="premium-track-marker">
+                                  <span>
+                                    {complete
+                                      ? "✓"
+                                      : index +
+                                        1}
+                                  </span>
 
-                {/* PRODUCTS */}
+                                  {index <
+                                    TRACKING_STEPS.length -
+                                      1 && (
+                                    <i
+                                      className={
+                                        index <
+                                        stepIndex
+                                          ? "complete"
+                                          : ""
+                                      }
+                                    />
+                                  )}
+                                </div>
 
-                <div className="order-products">
+                                <div>
+                                  <strong>
+                                    {step}
+                                  </strong>
 
-                  {Array.isArray(
-                    order.items
-                  ) &&
-                    order.items.map(
+                                  {current && (
+                                    <small>
+                                      Current
+                                    </small>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+                        )}
+                      </div>
+                    </section>
+                  ) : (
+                    <section className="cancelled-order-panel">
+                      <span>×</span>
+
+                      <div>
+                        <p>ORDER CANCELLED</p>
+                        <h2>
+                          This order was cancelled.
+                        </h2>
+                        <small>
+                          Stock has been restored for the cancelled items.
+                        </small>
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="premium-order-products">
+                    {items.map(
                       (
                         item,
                         index
                       ) => (
-
                         <div
-                          className="order-product"
-                          key={
-                            (
-                              item.productId ||
-                              item.id ||
-                              index
-                            ) +
-                            "-" +
-                            item.size +
-                            "-" +
-                            index
-                          }
+                          className="premium-order-product"
+                          key={`${item.productId || item.id || index}-${item.size || "size"}-${index}`}
                         >
-
-                          <img
-                            src={
-                              item.image
-                            }
-                            alt={
-                              item.name
-                            }
-                          />
-
-                          <div>
-
-                            <p className="product-category">
-                              {
-                                item.category
-                              }
-                            </p>
-
-                            <h3>
-                              {
+                          <div className="premium-order-image">
+                            <img
+                              src={resolveOrderImage(
+                                item
+                              )}
+                              alt={
                                 item.name
                               }
+                              onError={(
+                                event
+                              ) => {
+                                event.currentTarget.src =
+                                  fallbackImage(
+                                    item
+                                  );
+                              }}
+                            />
+                          </div>
+
+                          <div className="premium-order-product-info">
+                            <span>
+                              {item.category ||
+                                "LUMÉ"}
+                            </span>
+
+                            <h3>
+                              {item.name}
                             </h3>
 
                             <p>
-                              Size:{" "}
-
+                              SIZE{" "}
                               <strong>
-                                {
-                                  item.size
-                                }
+                                {item.size ||
+                                  "—"}
+                              </strong>
+                              <i>·</i>
+                              QTY{" "}
+                              <strong>
+                                {Number(
+                                  item.quantity ||
+                                    1
+                                )}
                               </strong>
                             </p>
-
-                            <p>
-                              Quantity:{" "}
-
-                              <strong>
-                                {
-                                  item.quantity
-                                }
-                              </strong>
-                            </p>
-
-                            <strong>
-                              ₹
-                              {Number(
-                                item.itemTotal ||
-                                  item.price *
-                                    item.quantity
-                              ).toLocaleString(
-                                "en-IN"
-                              )}
-                            </strong>
-
                           </div>
 
+                          <strong className="premium-order-line-price">
+                            ₹
+                            {Number(
+                              item.itemTotal ||
+                                Number(
+                                  item.price ||
+                                    0
+                                ) *
+                                  Number(
+                                    item.quantity ||
+                                      1
+                                  )
+                            ).toLocaleString(
+                              "en-IN"
+                            )}
+                          </strong>
                         </div>
-
                       )
                     )}
+                  </section>
 
-                </div>
-
-                {/* ORDER DETAILS */}
-
-                <div className="order-footer">
-
-                  <div>
-
+                  <button
+                    type="button"
+                    className="order-details-toggle"
+                    onClick={() =>
+                      setExpandedOrderId(
+                        expanded
+                          ? ""
+                          : order.id
+                      )
+                    }
+                  >
                     <span>
-                      Payment
+                      {expanded
+                        ? "HIDE ORDER DETAILS"
+                        : "VIEW ORDER DETAILS"}
                     </span>
 
-                    <strong>
-                      {order.paymentMethodName ||
-                        getPaymentName(
-                          order.paymentMethod ||
-                            order.payment
-                        )}
-                    </strong>
+                    <b>
+                      {expanded
+                        ? "−"
+                        : "+"}
+                    </b>
+                  </button>
 
-                  </div>
+                  {expanded && (
+                    <section className="premium-order-details">
+                      <div>
+                        <span>
+                          PAYMENT
+                        </span>
+                        <strong>
+                          {getPaymentName(
+                            order
+                          )}
+                        </strong>
+                      </div>
 
-                  <div>
+                      <div>
+                        <span>
+                          PAYMENT STATUS
+                        </span>
+                        <strong
+                          className={
+                            String(
+                              paymentStatus
+                            ).toLowerCase() ===
+                            "paid"
+                              ? "paid"
+                              : ""
+                          }
+                        >
+                          {paymentStatus}
+                        </strong>
+                      </div>
 
-                    <span>
-                      Payment Status
-                    </span>
+                      {order.transactionId && (
+                        <div>
+                          <span>
+                            TRANSACTION
+                          </span>
+                          <strong>
+                            {order.transactionId}
+                          </strong>
+                        </div>
+                      )}
 
-                    <strong>
-                      {order.paymentStatus ||
-                        "Pending"}
-                    </strong>
-
-                  </div>
-
-                  {deliveryAddress && (
-
-                    <div>
-
-                      <span>
-                        Delivery
-                      </span>
-
-                      <strong>
-                        {
-                          deliveryAddress
-                        }
-                      </strong>
-
-                    </div>
-
+                      {address && (
+                        <div className="order-address-detail">
+                          <span>
+                            DELIVERY ADDRESS
+                          </span>
+                          <strong>
+                            {address}
+                          </strong>
+                        </div>
+                      )}
+                    </section>
                   )}
 
-                </div>
+                  <footer className="premium-order-footer">
+                    <div>
+                      <span>
+                        {cancelled
+                          ? "Cancelled"
+                          : delivered
+                            ? "Order completed"
+                            : `Current status: ${status}`}
+                      </span>
 
-                {/* CUSTOMER ACTIONS */}
+                      {!cancelled &&
+                        !delivered && (
+                        <small>
+                          This page updates automatically when your order status changes.
+                        </small>
+                      )}
+                    </div>
 
-                {cancellationAllowed && (
-
-                  <div className="customer-order-actions">
-
-                    <button
-                      type="button"
-                      className="cancel-order-button"
-                      disabled={
-                        cancellingOrderId ===
+                    {canCancel(status) && (
+                      <button
+                        type="button"
+                        className="premium-cancel-button"
+                        disabled={
+                          cancellingOrderId ===
+                          order.id
+                        }
+                        onClick={() =>
+                          cancelOrder(
+                            order
+                          )
+                        }
+                      >
+                        {cancellingOrderId ===
                         order.id
-                      }
-                      onClick={() =>
-                        cancelOrder(
-                          order
-                        )
-                      }
-                    >
-                      {cancellingOrderId ===
-                      order.id
-                        ? "CANCELLING..."
-                        : "CANCEL ORDER"}
-                    </button>
-
-                    <p>
-                      You can cancel this
-                      order before it is
-                      packed.
-                    </p>
-
-                  </div>
-
-                )}
-
-              </article>
-            );
-          }
+                          ? "CANCELLING…"
+                          : "CANCEL ORDER"}
+                      </button>
+                    )}
+                  </footer>
+                </article>
+              );
+            }
+          )
         )}
-
-      </div>
-
-    </section>
+      </section>
+    </main>
   );
 }
 

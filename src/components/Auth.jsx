@@ -4,351 +4,122 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  sendEmailVerification,
 } from "firebase/auth";
 
-import {
-  doc,
-  setDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-
-import {
-  auth,
-  db,
-} from "../firebase";
+import { auth } from "../firebase";
+import "./Auth.css";
 
 function Auth({ onClose }) {
   const [isLogin, setIsLogin] = useState(true);
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  const [
-    confirmPassword,
-    setConfirmPassword,
-  ] = useState("");
-
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // =====================================================
-  // ERROR MESSAGES
-  // =====================================================
-
-  function getErrorMessage(
-    errorCode,
-    errorMessage = ""
-  ) {
+  function getErrorMessage(errorCode) {
     switch (errorCode) {
       case "auth/email-already-in-use":
-        return "An account already exists with this email.";
-
+        return "An account already exists with this email address.";
       case "auth/invalid-email":
-        return "Please enter a valid email address.";
-
+        return "Enter a valid email address.";
       case "auth/weak-password":
-        return "Password must be at least 6 characters.";
-
+        return "Use a password with at least 6 characters.";
       case "auth/invalid-credential":
-        return "Incorrect email or password.";
-
-      case "auth/user-not-found":
-        return "No account was found with this email.";
-
       case "auth/wrong-password":
-        return "Incorrect password.";
-
+        return "The email or password is incorrect.";
+      case "auth/user-not-found":
+        return "We could not find an account with this email.";
       case "auth/too-many-requests":
         return "Too many attempts. Please try again later.";
-
       case "auth/network-request-failed":
-        return "Network error. Check your internet connection.";
-
+        return "Network error. Check your internet connection and try again.";
       case "auth/operation-not-allowed":
-        return "Email/password authentication is not enabled.";
-
-      case "auth/invalid-api-key":
-        return "Firebase API key is invalid.";
-
-      case "auth/app-not-authorized":
-        return "This app is not authorized to use Firebase Authentication.";
-
+        return "Email and password sign-in is currently unavailable.";
       case "auth/missing-email":
-        return "Please enter your email address.";
-
-      case "permission-denied":
-        return "Firestore permission denied. Please check your Firestore rules.";
-
+        return "Enter your email address.";
       default:
-        if (errorCode) {
-          return (
-            "Firebase error: " +
-            errorCode +
-            (errorMessage
-              ? " — " + errorMessage
-              : "")
-          );
-        }
-
-        return "Something went wrong. Please try again.";
+        return "We could not complete that request. Please try again.";
     }
   }
-
-  // =====================================================
-  // CREATE FIRESTORE PROFILE
-  // =====================================================
-
-  async function createUserProfile(
-    firebaseUser
-  ) {
-    if (!firebaseUser) {
-      return;
-    }
-
-    await setDoc(
-      doc(
-        db,
-        "users",
-        firebaseUser.uid
-      ),
-      {
-        uid: firebaseUser.uid,
-
-        email:
-          firebaseUser.email || "",
-
-        emailVerified:
-          firebaseUser.emailVerified,
-
-        cart: [],
-
-        wishlist: [],
-
-        createdAt:
-          serverTimestamp(),
-
-        updatedAt:
-          serverTimestamp(),
-      },
-      {
-        merge: true,
-      }
-    );
-  }
-
-  // =====================================================
-  // UPDATE PROFILE ON LOGIN
-  // =====================================================
-
-  async function updateUserProfile(
-    firebaseUser
-  ) {
-    if (!firebaseUser) {
-      return;
-    }
-
-    await setDoc(
-      doc(
-        db,
-        "users",
-        firebaseUser.uid
-      ),
-      {
-        uid: firebaseUser.uid,
-
-        email:
-          firebaseUser.email || "",
-
-        emailVerified:
-          firebaseUser.emailVerified,
-
-        updatedAt:
-          serverTimestamp(),
-      },
-      {
-        merge: true,
-      }
-    );
-  }
-
-  // =====================================================
-  // LOGIN
-  // =====================================================
 
   async function handleLogin() {
     setError("");
     setSuccess("");
 
-    const cleanEmail =
-      email.trim();
+    const cleanEmail = email.trim();
 
-    if (
-      !cleanEmail ||
-      !password
-    ) {
-      setError(
-        "Please enter your email and password."
-      );
-
+    if (!cleanEmail || !password) {
+      setError("Enter your email address and password.");
       return;
     }
 
     try {
       setLoading(true);
 
-      const userCredential =
-        await signInWithEmailAndPassword(
-          auth,
-          cleanEmail,
-          password
-        );
-
-      const signedInUser =
-        userCredential.user;
-
-      await updateUserProfile(
-        signedInUser
+      await signInWithEmailAndPassword(
+        auth,
+        cleanEmail,
+        password
       );
 
-      console.log(
-        "Signed in:",
-        signedInUser
-      );
-
-      if (onClose) {
-        onClose();
-      }
-    } catch (error) {
-      console.error(
-        "Firebase login error:",
-        error
-      );
-
-      setError(
-        getErrorMessage(
-          error.code,
-          error.message
-        )
-      );
+      onClose?.();
+    } catch (loginError) {
+      console.error("Firebase login error:", loginError);
+      setError(getErrorMessage(loginError.code));
     } finally {
       setLoading(false);
     }
   }
-
-  // =====================================================
-  // CREATE ACCOUNT
-  // =====================================================
 
   async function handleSignup() {
     setError("");
     setSuccess("");
 
-    const cleanEmail =
-      email.trim();
+    const cleanEmail = email.trim();
 
     if (!cleanEmail) {
-      setError(
-        "Please enter your email."
-      );
-
+      setError("Enter your email address.");
       return;
     }
 
     if (password.length < 6) {
-      setError(
-        "Password must be at least 6 characters."
-      );
-
+      setError("Use a password with at least 6 characters.");
       return;
     }
 
-    if (
-      password !==
-      confirmPassword
-    ) {
-      setError(
-        "Passwords do not match."
-      );
-
+    if (password !== confirmPassword) {
+      setError("Your passwords do not match.");
       return;
     }
 
     try {
       setLoading(true);
 
-      const userCredential =
-        await createUserWithEmailAndPassword(
-          auth,
-          cleanEmail,
-          password
-        );
-
-      const newUser =
-        userCredential.user;
-
-      // Create Firestore profile
-      await createUserProfile(
-        newUser
+      await createUserWithEmailAndPassword(
+        auth,
+        cleanEmail,
+        password
       );
 
-      // Send email verification
-      await sendEmailVerification(
-        newUser
-      );
-
-      console.log(
-        "Account created:",
-        newUser
-      );
-
-      console.log(
-        "Firestore profile created:",
-        newUser.uid
-      );
-
-      setSuccess(
-        "Account created successfully. A verification email has been sent to " +
-          cleanEmail +
-          ". Please verify your email."
-      );
-
-      setPassword("");
-      setConfirmPassword("");
-    } catch (error) {
-      console.error(
-        "Firebase signup error:",
-        error
-      );
-
-      setError(
-        getErrorMessage(
-          error.code,
-          error.message
-        )
-      );
+      onClose?.();
+    } catch (signupError) {
+      console.error("Firebase signup error:", signupError);
+      setError(getErrorMessage(signupError.code));
     } finally {
       setLoading(false);
     }
   }
 
-  // =====================================================
-  // FORGOT PASSWORD
-  // =====================================================
-
   async function handleForgotPassword() {
     setError("");
     setSuccess("");
 
-    const cleanEmail =
-      email.trim();
+    const cleanEmail = email.trim();
 
     if (!cleanEmail) {
-      setError(
-        "Enter your email address first."
-      );
-
+      setError("Enter your email address first.");
       return;
     }
 
@@ -361,91 +132,20 @@ function Auth({ onClose }) {
       );
 
       setSuccess(
-        "Password reset email sent. Check your inbox."
+        "Password reset link sent. Check your email inbox."
       );
-    } catch (error) {
-      console.error(
-        "Password reset error:",
-        error
-      );
-
-      setError(
-        getErrorMessage(
-          error.code,
-          error.message
-        )
-      );
+    } catch (resetError) {
+      console.error("Password reset error:", resetError);
+      setError(getErrorMessage(resetError.code));
     } finally {
       setLoading(false);
     }
   }
-
-  // =====================================================
-  // RESEND VERIFICATION
-  // =====================================================
-
-  async function handleResendVerification() {
-    setError("");
-    setSuccess("");
-
-    const currentUser =
-      auth.currentUser;
-
-    if (!currentUser) {
-      setError(
-        "Please sign in first before requesting another verification email."
-      );
-
-      return;
-    }
-
-    if (
-      currentUser.emailVerified
-    ) {
-      setSuccess(
-        "Your email is already verified."
-      );
-
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      await sendEmailVerification(
-        currentUser
-      );
-
-      setSuccess(
-        "Verification email sent again. Please check your inbox."
-      );
-    } catch (error) {
-      console.error(
-        "Verification email error:",
-        error
-      );
-
-      setError(
-        getErrorMessage(
-          error.code,
-          error.message
-        )
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // =====================================================
-  // SUBMIT
-  // =====================================================
 
   function handleSubmit(event) {
     event.preventDefault();
 
-    if (loading) {
-      return;
-    }
+    if (loading) return;
 
     if (isLogin) {
       handleLogin();
@@ -454,147 +154,130 @@ function Auth({ onClose }) {
     }
   }
 
-  // =====================================================
-  // SWITCH LOGIN / SIGNUP
-  // =====================================================
-
   function switchMode() {
-    setIsLogin(
-      (current) => !current
-    );
-
+    setIsLogin((current) => !current);
     setError("");
     setSuccess("");
-
     setPassword("");
     setConfirmPassword("");
   }
 
-  // =====================================================
-  // RENDER
-  // =====================================================
-
   return (
-    <div className="auth-overlay">
-
+    <div
+      className="auth-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lume-auth-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose?.();
+        }
+      }}
+    >
       <div className="auth-modal">
-
-        {/* CLOSE */}
-
         <button
           type="button"
           className="auth-close"
           onClick={onClose}
-          aria-label="Close"
+          aria-label="Close account window"
         >
           ×
         </button>
 
-        {/* BRAND */}
-
-        <div className="auth-brand">
-          LUMÉ
+        <div className="auth-brand" aria-label="LUMÉ">
+          L U M É
         </div>
 
-        <p className="auth-small-title">
-          {isLogin
-            ? "WELCOME BACK"
-            : "JOIN LUMÉ"}
-        </p>
+        <div className="auth-heading">
+          <p className="auth-small-title">
+            {isLogin ? "ACCOUNT ACCESS" : "NEW ACCOUNT"}
+          </p>
 
-        <h2>
-          {isLogin
-            ? "Sign in to your account"
-            : "Create your account"}
-        </h2>
+          <h2 id="lume-auth-title">
+            {isLogin
+              ? "Welcome back."
+              : "Create your account."}
+          </h2>
 
-        <p className="auth-description">
-          {isLogin
-            ? "Access your shopping bag, wishlist and personalized Lumé experience."
-            : "Create an account and start building your personal Lumé wardrobe."}
-        </p>
+          <p className="auth-description">
+            {isLogin
+              ? "Sign in to continue to your bag, saved pieces and order history."
+              : "Save favourites, manage delivery addresses and track your LUMÉ orders in one place."}
+          </p>
+        </div>
 
         <form
           className="auth-form"
           onSubmit={handleSubmit}
         >
+          <div className="auth-field">
+            <label htmlFor="auth-email">
+              EMAIL ADDRESS
+            </label>
 
-          {/* EMAIL */}
+            <input
+              id="auth-email"
+              type="email"
+              placeholder="name@example.com"
+              value={email}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
+              autoComplete="email"
+              disabled={loading}
+            />
+          </div>
 
-          <label htmlFor="auth-email">
-            Email address
-          </label>
+          <div className="auth-field">
+            <div className="auth-label-row">
+              <label htmlFor="auth-password">
+                PASSWORD
+              </label>
 
-          <input
-            id="auth-email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(event) =>
-              setEmail(
-                event.target.value
-              )
-            }
-            autoComplete="email"
-            disabled={loading}
-            required
-          />
+              {isLogin && (
+                <button
+                  type="button"
+                  className="forgot-password-button"
+                  onClick={handleForgotPassword}
+                  disabled={loading}
+                >
+                  RESET PASSWORD
+                </button>
+              )}
+            </div>
 
-          {/* PASSWORD */}
-
-          <label htmlFor="auth-password">
-            Password
-          </label>
-
-          <input
-            id="auth-password"
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(event) =>
-              setPassword(
-                event.target.value
-              )
-            }
-            autoComplete={
-              isLogin
-                ? "current-password"
-                : "new-password"
-            }
-            disabled={loading}
-            required
-          />
-
-          {/* FORGOT PASSWORD */}
-
-          {isLogin && (
-            <button
-              type="button"
-              className="forgot-password-button"
-              onClick={
-                handleForgotPassword
+            <input
+              id="auth-password"
+              type="password"
+              placeholder={
+                isLogin
+                  ? "Enter your password"
+                  : "Minimum 6 characters"
+              }
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
+              autoComplete={
+                isLogin
+                  ? "current-password"
+                  : "new-password"
               }
               disabled={loading}
-            >
-              Forgot password?
-            </button>
-          )}
-
-          {/* CONFIRM PASSWORD */}
+            />
+          </div>
 
           {!isLogin && (
-            <>
+            <div className="auth-field">
               <label htmlFor="auth-confirm-password">
-                Confirm password
+                CONFIRM PASSWORD
               </label>
 
               <input
                 id="auth-confirm-password"
                 type="password"
-                placeholder="Enter password again"
-                value={
-                  confirmPassword
-                }
+                placeholder="Re-enter your password"
+                value={confirmPassword}
                 onChange={(event) =>
                   setConfirmPassword(
                     event.target.value
@@ -602,28 +285,21 @@ function Auth({ onClose }) {
                 }
                 autoComplete="new-password"
                 disabled={loading}
-                required
               />
-            </>
+            </div>
           )}
 
-          {/* ERROR */}
-
           {error && (
-            <div className="auth-error">
+            <div className="auth-message auth-error">
               {error}
             </div>
           )}
 
-          {/* SUCCESS */}
-
           {success && (
-            <div className="auth-success">
+            <div className="auth-message auth-success">
               {success}
             </div>
           )}
-
-          {/* SUBMIT */}
 
           <button
             type="submit"
@@ -631,38 +307,17 @@ function Auth({ onClose }) {
             disabled={loading}
           >
             {loading
-              ? "PLEASE WAIT..."
+              ? "PLEASE WAIT"
               : isLogin
               ? "SIGN IN →"
               : "CREATE ACCOUNT →"}
           </button>
-
-          {/* RESEND VERIFICATION */}
-
-          {auth.currentUser &&
-            !auth.currentUser
-              .emailVerified && (
-              <button
-                type="button"
-                className="verification-button"
-                onClick={
-                  handleResendVerification
-                }
-                disabled={loading}
-              >
-                RESEND VERIFICATION EMAIL
-              </button>
-            )}
-
         </form>
 
-        {/* SWITCH */}
-
         <div className="auth-switch">
-
           <span>
             {isLogin
-              ? "New to Lumé?"
+              ? "New to LUMÉ?"
               : "Already have an account?"}
           </span>
 
@@ -672,14 +327,15 @@ function Auth({ onClose }) {
             disabled={loading}
           >
             {isLogin
-              ? "Create account"
-              : "Sign in"}
+              ? "CREATE ACCOUNT →"
+              : "SIGN IN →"}
           </button>
-
         </div>
 
+        <p className="auth-footnote">
+          SECURE ACCOUNT ACCESS · LUMÉ
+        </p>
       </div>
-
     </div>
   );
 }

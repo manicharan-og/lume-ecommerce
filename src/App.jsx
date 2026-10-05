@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-
 import "./App.css";
 
 import ProductDetails from "./components/ProductDetails";
@@ -26,244 +25,287 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 
-import {
-  auth,
-  db,
-} from "./firebase";
+import { auth, db } from "./firebase";
+
+
+function getFallbackProductImage(product = {}) {
+  const value = `${product.name || ""} ${product.category || ""}`.toLowerCase();
+
+  if (value.includes("trouser") || value.includes("bottom")) return "/images/trousers.jpg";
+  if (value.includes("hoodie")) return "/images/hoodie.jpg";
+  if (value.includes("t-shirt") || value.includes("tshirt") || value.includes("tee")) return "/images/tshirt.jpg";
+  if (value.includes("shirt")) return "/images/shirt.jpg";
+
+  return "/images/tshirt.jpg";
+}
+
+function resolveProductImage(product = {}) {
+  const raw = String(product.image || product.imageUrl || "").trim();
+
+  if (!raw) return getFallbackProductImage(product);
+
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  ) {
+    return raw;
+  }
+
+  if (raw.startsWith("/")) return raw;
+  if (raw.startsWith("images/")) return `/${raw}`;
+
+  return `/images/${raw.replace(/^.*[\\/]/, "")}`;
+}
+
+function handleProductImageError(event, product = {}) {
+  const fallback = getFallbackProductImage(product);
+
+  if (event.currentTarget.src.endsWith(fallback)) return;
+
+  event.currentTarget.src = fallback;
+}
+
 
 function App() {
   // =====================================================
-  // GUEST CART
+  // GUEST DATA
   // =====================================================
 
   function getGuestCart() {
     try {
-      const savedCart =
-        localStorage.getItem("lume-cart");
+      const value = localStorage.getItem("lume-cart");
 
-      return savedCart
-        ? JSON.parse(savedCart)
-        : [];
+      return value ? JSON.parse(value) : [];
     } catch (error) {
-      console.error(
-        "Could not load guest cart:",
-        error
-      );
+      console.error("Guest cart error:", error);
 
       return [];
     }
   }
-
-  // =====================================================
-  // GUEST WISHLIST
-  // =====================================================
 
   function getGuestWishlist() {
     try {
-      const savedWishlist =
-        localStorage.getItem(
-          "lume-wishlist"
-        );
+      const value = localStorage.getItem("lume-wishlist");
 
-      return savedWishlist
-        ? JSON.parse(savedWishlist)
-        : [];
+      return value ? JSON.parse(value) : [];
     } catch (error) {
-      console.error(
-        "Could not load guest wishlist:",
-        error
-      );
+      console.error("Guest wishlist error:", error);
 
       return [];
     }
   }
 
   // =====================================================
-  // CART
+  // CART / WISHLIST
   // =====================================================
 
-  const [
-    cart,
-    setCart,
-  ] = useState(() =>
-    getGuestCart()
-  );
+  const [cart, setCart] = useState(() => getGuestCart());
 
-  // =====================================================
-  // WISHLIST
-  // =====================================================
-
-  const [
-    wishlist,
-    setWishlist,
-  ] = useState(() =>
+  const [wishlist, setWishlist] = useState(() =>
     getGuestWishlist()
   );
 
   // =====================================================
-  // WEBSITE STATE
+  // PAGE STATE
   // =====================================================
 
-  const [
-    selectedProduct,
-    setSelectedProduct,
-  ] = useState(null);
+  const [selectedProduct, setSelectedProduct] =
+    useState(null);
 
-  const [
-    showCheckout,
-    setShowCheckout,
-  ] = useState(false);
+  const [showCheckout, setShowCheckout] =
+    useState(false);
 
-  const [
-    showOrders,
-    setShowOrders,
-  ] = useState(false);
+  const [showOrders, setShowOrders] =
+    useState(false);
 
-  const [
-    showProfile,
-    setShowProfile,
-  ] = useState(false);
+  const [showProfile, setShowProfile] =
+    useState(false);
 
-  const [
-    showAdminProducts,
-    setShowAdminProducts,
-  ] = useState(false);
+  const [showAdminProducts, setShowAdminProducts] =
+    useState(false);
 
-  const [
-    showAdminOrders,
-    setShowAdminOrders,
-  ] = useState(false);
+  const [showAdminOrders, setShowAdminOrders] =
+    useState(false);
 
-  const [
-    searchOpen,
-    setSearchOpen,
-  ] = useState(false);
+  const [showShop, setShowShop] =
+    useState(false);
 
-  const [
-    searchTerm,
-    setSearchTerm,
-  ] = useState("");
+  const [showWishlistPage, setShowWishlistPage] =
+    useState(false);
 
-  const [
-    activeCategory,
-    setActiveCategory,
-  ] = useState("All");
+  // =====================================================
+  // MOBILE / UI
+  // =====================================================
+
+  const [mobileMenuOpen, setMobileMenuOpen] =
+    useState(false);
+
+  const [newsletterEmail, setNewsletterEmail] =
+    useState("");
+
+  const [newsletterMessage, setNewsletterMessage] =
+    useState("");
+
+  const [searchOpen, setSearchOpen] =
+    useState(false);
+
+  const [searchTerm, setSearchTerm] =
+    useState("");
+
+  const [recentSearches, setRecentSearches] =
+    useState(() => {
+      try {
+        const saved = localStorage.getItem("lume-recent-searches");
+        return saved ? JSON.parse(saved) : [];
+      } catch (error) {
+        console.error("Recent search error:", error);
+        return [];
+      }
+    });
+
+  const [activeCategory, setActiveCategory] =
+    useState("All");
+
+  const [sortOption, setSortOption] =
+    useState("Newest");
+
+  const [filterOpen, setFilterOpen] =
+    useState(false);
+
+  const [stockFilter, setStockFilter] =
+    useState("All");
+
+  const [priceFilter, setPriceFilter] =
+    useState("All");
+
+  const [sizeFilter, setSizeFilter] =
+    useState("All");
+
+  const [ratingFilter, setRatingFilter] =
+    useState("All");
+
+  const [bagDrawerOpen, setBagDrawerOpen] =
+    useState(false);
+
+  const [quickViewProduct, setQuickViewProduct] =
+    useState(null);
+
+  const [quickViewSize, setQuickViewSize] =
+    useState("");
+
+  const [quickViewQuantity, setQuickViewQuantity] =
+    useState(1);
+
+  const [accountMenuOpen, setAccountMenuOpen] =
+    useState(false);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        closeSearchOverlay();
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [searchOpen]);
 
   // =====================================================
   // AUTH
   // =====================================================
 
-  const [
-    user,
-    setUser,
-  ] = useState(null);
+  const [user, setUser] =
+    useState(null);
 
-  const [
-    authLoading,
-    setAuthLoading,
-  ] = useState(true);
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
-  const [
-    showAuth,
-    setShowAuth,
-  ] = useState(false);
+  const [showAuth, setShowAuth] =
+    useState(false);
 
-  const [
-    accountMenuOpen,
-    setAccountMenuOpen,
-  ] = useState(false);
+  const [checkingVerification, setCheckingVerification] =
+    useState(false);
 
-  const [
-    checkingVerification,
-    setCheckingVerification,
-  ] = useState(false);
+  const [isAdmin, setIsAdmin] =
+    useState(false);
 
-  const [
-    isAdmin,
-    setIsAdmin,
-  ] = useState(false);
+  const [userDataReady, setUserDataReady] =
+    useState(false);
 
-  // =====================================================
-  // FIRESTORE USER SYNC
-  // =====================================================
-
-  const [
-    userDataReady,
-    setUserDataReady,
-  ] = useState(false);
-
-  const [
-    syncingAccount,
-    setSyncingAccount,
-  ] = useState(false);
+  const [syncingAccount, setSyncingAccount] =
+    useState(false);
 
   // =====================================================
   // PRODUCTS
   // =====================================================
 
-  const [
-    products,
-    setProducts,
-  ] = useState([]);
+  const [products, setProducts] =
+    useState([]);
 
-  const [
-    productsLoading,
-    setProductsLoading,
-  ] = useState(true);
+  const [productsLoading, setProductsLoading] =
+    useState(true);
 
-  const [
-    productsError,
-    setProductsError,
-  ] = useState("");
+  const [productsError, setProductsError] =
+    useState("");
 
   // =====================================================
   // AUTH LISTENER
   // =====================================================
 
   useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (currentUser) => {
-          setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        setUser(currentUser);
 
-          setAuthLoading(false);
+        setAuthLoading(false);
 
-          setUserDataReady(false);
+        setUserDataReady(false);
 
-          setIsAdmin(false);
+        setIsAdmin(false);
 
-          if (currentUser) {
-            setShowAuth(false);
-          } else {
-            setShowProfile(false);
-            setShowAdminProducts(false);
-            setShowAdminOrders(false);
-          }
+        if (currentUser) {
+          setShowAuth(false);
+        } else {
+          setShowProfile(false);
+          setShowOrders(false);
+          setShowCheckout(false);
+          setShowAdminProducts(false);
+          setShowAdminOrders(false);
         }
-      );
+      }
+    );
 
     return unsubscribe;
   }, []);
 
   // =====================================================
-  // LOAD USER CART / WISHLIST / ROLE
+  // LOAD USER DATA
   // =====================================================
 
   useEffect(() => {
     async function loadUserData() {
       if (!user) {
-        setIsAdmin(false);
+        setCart(getGuestCart());
 
-        setCart(
-          getGuestCart()
-        );
-
-        setWishlist(
-          getGuestWishlist()
-        );
+        setWishlist(getGuestWishlist());
 
         setUserDataReady(true);
+
+        setIsAdmin(false);
 
         return;
       }
@@ -271,32 +313,22 @@ function App() {
       try {
         setSyncingAccount(true);
 
-        const userReference =
-          doc(
-            db,
-            "users",
-            user.uid
-          );
+        const userRef = doc(
+          db,
+          "users",
+          user.uid
+        );
 
-        const userSnapshot =
-          await getDoc(
-            userReference
-          );
+        const snapshot = await getDoc(userRef);
 
-        const guestCart =
-          getGuestCart();
+        const guestCart = getGuestCart();
 
         const guestWishlist =
           getGuestWishlist();
 
-        // EXISTING USER
-        if (
-          userSnapshot.exists()
-        ) {
-          const data =
-            userSnapshot.data();
+        if (snapshot.exists()) {
+          const data = snapshot.data();
 
-          // ADMIN CHECK
           setIsAdmin(
             data.role === "admin"
           );
@@ -304,36 +336,21 @@ function App() {
           const remoteCart =
             Array.isArray(data.cart)
               ? data.cart
-              : null;
-
-          const remoteWishlist =
-            Array.isArray(
-              data.wishlist
-            )
-              ? data.wishlist
-              : null;
-
-          const cartToUse =
-            remoteCart !== null
-              ? remoteCart
               : guestCart;
 
-          const wishlistToUse =
-            remoteWishlist !== null
-              ? remoteWishlist
+          const remoteWishlist =
+            Array.isArray(data.wishlist)
+              ? data.wishlist
               : guestWishlist;
 
-          setCart(cartToUse);
+          setCart(remoteCart);
 
-          setWishlist(
-            wishlistToUse
-          );
+          setWishlist(remoteWishlist);
 
           await setDoc(
-            userReference,
+            userRef,
             {
-              uid:
-                user.uid,
+              uid: user.uid,
 
               email:
                 user.email || "",
@@ -342,10 +359,10 @@ function App() {
                 user.emailVerified,
 
               cart:
-                cartToUse,
+                remoteCart,
 
               wishlist:
-                wishlistToUse,
+                remoteWishlist,
 
               updatedAt:
                 serverTimestamp(),
@@ -354,20 +371,15 @@ function App() {
               merge: true,
             }
           );
-        }
-
-        // NEW USER
-        else {
-          setIsAdmin(false);
-
+        } else {
           setCart(guestCart);
 
-          setWishlist(
-            guestWishlist
-          );
+          setWishlist(guestWishlist);
+
+          setIsAdmin(false);
 
           await setDoc(
-            userReference,
+            userRef,
             {
               uid:
                 user.uid,
@@ -399,19 +411,17 @@ function App() {
         setUserDataReady(true);
       } catch (error) {
         console.error(
-          "Could not load Firestore user data:",
+          "User data error:",
           error
         );
 
-        setIsAdmin(false);
-
-        setCart(
-          getGuestCart()
-        );
+        setCart(getGuestCart());
 
         setWishlist(
           getGuestWishlist()
         );
+
+        setIsAdmin(false);
 
         setUserDataReady(true);
       } finally {
@@ -422,10 +432,7 @@ function App() {
     if (!authLoading) {
       loadUserData();
     }
-  }, [
-    user,
-    authLoading,
-  ]);
+  }, [user, authLoading]);
 
   // =====================================================
   // SAVE GUEST CART
@@ -442,15 +449,9 @@ function App() {
         JSON.stringify(cart)
       );
     } catch (error) {
-      console.error(
-        "Could not save guest cart:",
-        error
-      );
+      console.error(error);
     }
-  }, [
-    cart,
-    user,
-  ]);
+  }, [cart, user]);
 
   // =====================================================
   // SAVE GUEST WISHLIST
@@ -464,23 +465,15 @@ function App() {
     try {
       localStorage.setItem(
         "lume-wishlist",
-        JSON.stringify(
-          wishlist
-        )
+        JSON.stringify(wishlist)
       );
     } catch (error) {
-      console.error(
-        "Could not save guest wishlist:",
-        error
-      );
+      console.error(error);
     }
-  }, [
-    wishlist,
-    user,
-  ]);
+  }, [wishlist, user]);
 
   // =====================================================
-  // SAVE FIRESTORE CART
+  // FIRESTORE CART
   // =====================================================
 
   useEffect(() => {
@@ -511,7 +504,7 @@ function App() {
         );
       } catch (error) {
         console.error(
-          "Could not save cart to Firestore:",
+          "Cart sync error:",
           error
         );
       }
@@ -525,7 +518,7 @@ function App() {
   ]);
 
   // =====================================================
-  // SAVE FIRESTORE WISHLIST
+  // FIRESTORE WISHLIST
   // =====================================================
 
   useEffect(() => {
@@ -556,7 +549,7 @@ function App() {
         );
       } catch (error) {
         console.error(
-          "Could not save wishlist:",
+          "Wishlist sync error:",
           error
         );
       }
@@ -570,155 +563,317 @@ function App() {
   ]);
 
   // =====================================================
-  // REAL-TIME PRODUCTS
+  // PRODUCTS
   // =====================================================
 
   useEffect(() => {
     setProductsLoading(true);
 
-    setProductsError("");
+    const ref = collection(
+      db,
+      "products"
+    );
 
-    const productsReference =
-      collection(
-        db,
-        "products"
-      );
+    const unsubscribe = onSnapshot(
+      ref,
 
-    const unsubscribe =
-      onSnapshot(
-        productsReference,
+      (snapshot) => {
+        const loaded =
+          snapshot.docs
+            .map(
+              (document) => ({
+                id:
+                  document.id,
 
-        (snapshot) => {
-          const loadedProducts =
-            snapshot.docs
-              .map(
-                (document) => ({
-                  id:
-                    document.id,
+                ...document.data(),
+              })
+            )
+            .filter(
+              (product) =>
+                product.active !==
+                false
+            );
 
-                  ...document.data(),
-                })
-              )
-              .filter(
-                (product) =>
-                  product.active !==
-                  false
-              );
+        loaded.sort(
+          (a, b) =>
+            String(a.id).localeCompare(
+              String(b.id),
+              undefined,
+              {
+                numeric: true,
+              }
+            )
+        );
 
-          loadedProducts.sort(
-            (a, b) =>
-              String(
-                a.id || ""
-              ).localeCompare(
-                String(
-                  b.id || ""
-                ),
-                undefined,
-                {
-                  numeric: true,
-                }
-              )
-          );
+        setProducts(loaded);
 
-          setProducts(
-            loadedProducts
-          );
+        setProductsLoading(false);
 
-          setProductsLoading(
-            false
-          );
-        },
+        setProductsError("");
+      },
 
-        (error) => {
-          console.error(
-            "Could not load products:",
-            error
-          );
+      (error) => {
+        console.error(
+          "Products error:",
+          error
+        );
 
-          setProductsError(
-            "Could not load products."
-          );
+        setProductsError(
+          "Could not load products."
+        );
 
-          setProductsLoading(
-            false
-          );
-        }
-      );
+        setProductsLoading(false);
+      }
+    );
 
-    return () =>
-      unsubscribe();
+    return unsubscribe;
   }, []);
 
   // =====================================================
-  // FILTERED PRODUCTS
+  // PRODUCT FILTERING
   // =====================================================
 
-  const filteredProducts =
+  let filteredProducts =
     products.filter(
       (product) => {
-        const matchesCategory =
+        const categoryMatch =
           activeCategory ===
             "All" ||
           product.category ===
             activeCategory;
 
-        const search =
+        const value =
           searchTerm
-            .toLowerCase()
-            .trim();
+            .trim()
+            .toLowerCase();
 
-        const matchesSearch =
+        const searchMatch =
           String(
-            product.name || ""
+            product.name ||
+              ""
           )
             .toLowerCase()
-            .includes(search) ||
-
+            .includes(value) ||
           String(
             product.category ||
               ""
           )
             .toLowerCase()
-            .includes(search);
+            .includes(value);
 
         return (
-          matchesCategory &&
-          matchesSearch
+          categoryMatch &&
+          searchMatch
         );
       }
     );
 
-  // =====================================================
-  // SCROLL
-  // =====================================================
-
-  function scrollToSection(
-    id,
-    delay = 100
-  ) {
-    setTimeout(() => {
-      const element =
-        document.getElementById(
-          id
-        );
-
-      if (element) {
-        element.scrollIntoView({
-          behavior:
-            "smooth",
-
-          block:
-            "start",
-        });
-      }
-    }, delay);
+  if (stockFilter === "In Stock") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.stock || 0) > 0
+    );
   }
 
+  if (stockFilter === "Out of Stock") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.stock || 0) <= 0
+    );
+  }
+
+  if (priceFilter === "Under 1000") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.price || 0) < 1000
+    );
+  }
+
+  if (priceFilter === "1000-2000") {
+    filteredProducts = filteredProducts.filter((product) => {
+      const price = Number(product.price || 0);
+      return price >= 1000 && price <= 2000;
+    });
+  }
+
+  if (priceFilter === "Above 2000") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.price || 0) > 2000
+    );
+  }
+
+  if (sizeFilter !== "All") {
+    filteredProducts = filteredProducts.filter((product) => {
+      const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+      return sizes.map(String).includes(String(sizeFilter));
+    });
+  }
+
+  if (ratingFilter === "4.5+") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.rating || 0) >= 4.5
+    );
+  }
+
+  if (ratingFilter === "4.0+") {
+    filteredProducts = filteredProducts.filter(
+      (product) => Number(product.rating || 0) >= 4
+    );
+  }
+
+  if (
+    sortOption ===
+    "Price Low"
+  ) {
+    filteredProducts = [
+      ...filteredProducts,
+    ].sort(
+      (a, b) =>
+        Number(a.price) -
+        Number(b.price)
+    );
+  }
+
+  if (
+    sortOption ===
+    "Price High"
+  ) {
+    filteredProducts = [
+      ...filteredProducts,
+    ].sort(
+      (a, b) =>
+        Number(b.price) -
+        Number(a.price)
+    );
+  }
+
+  if (
+    sortOption ===
+    "Rating"
+  ) {
+    filteredProducts = [
+      ...filteredProducts,
+    ].sort(
+      (a, b) =>
+        Number(
+          b.rating || 0
+        ) -
+        Number(
+          a.rating || 0
+        )
+    );
+  }
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+
+  const liveSearchResults = normalizedSearchTerm
+    ? products.filter((product) => {
+        const haystack = [
+          product.name,
+          product.category,
+          product.description,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(normalizedSearchTerm);
+      })
+    : [];
+
   // =====================================================
-  // HOME
+  // HELPERS
   // =====================================================
 
-  function goHome() {
+  function scrollTop() {
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function openSearchOverlay() {
+    setSearchOpen(true);
+    setFilterOpen(false);
+    setBagDrawerOpen(false);
+    setQuickViewProduct(null);
+    setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function closeSearchOverlay(clearSearch = true) {
+    setSearchOpen(false);
+
+    if (clearSearch) {
+      setSearchTerm("");
+    }
+  }
+
+  function saveRecentSearch(value) {
+    const cleanValue = String(value || "").trim();
+
+    if (!cleanValue) {
+      return;
+    }
+
+    setRecentSearches((current) => {
+      const next = [
+        cleanValue,
+        ...current.filter(
+          (item) => item.toLowerCase() !== cleanValue.toLowerCase()
+        ),
+      ].slice(0, 5);
+
+      try {
+        localStorage.setItem(
+          "lume-recent-searches",
+          JSON.stringify(next)
+        );
+      } catch (error) {
+        console.error("Could not save recent searches:", error);
+      }
+
+      return next;
+    });
+  }
+
+  function clearRecentSearches() {
+    setRecentSearches([]);
+
+    try {
+      localStorage.removeItem("lume-recent-searches");
+    } catch (error) {
+      console.error("Could not clear recent searches:", error);
+    }
+  }
+
+  function openSearchProduct(product) {
+    saveRecentSearch(product.name);
+    setSearchOpen(false);
+    setSearchTerm("");
+    openProduct(product);
+  }
+
+  function searchCategory(category) {
+    saveRecentSearch(category);
+    setSearchOpen(false);
+    openShop(category);
+  }
+
+  function showAllSearchResults() {
+    const value = searchTerm.trim();
+
+    if (!value) {
+      return;
+    }
+
+    saveRecentSearch(value);
+    resetPages();
+    setShowShop(true);
+    setActiveCategory("All");
+    setSearchOpen(false);
+    scrollTop();
+  }
+
+
+  function resetPages() {
     setSelectedProduct(null);
 
     setShowCheckout(false);
@@ -727,59 +882,67 @@ function App() {
 
     setShowProfile(false);
 
-    setShowAdminProducts(
-      false
-    );
+    setShowAdminProducts(false);
 
-    setShowAdminOrders(
-      false
-    );
+    setShowAdminOrders(false);
+
+    setShowWishlistPage(false);
+
+    setMobileMenuOpen(false);
+
+    setAccountMenuOpen(false);
+  }
+
+  function goHome() {
+    resetPages();
+
+    setShowShop(false);
 
     setSearchOpen(false);
 
-    setAccountMenuOpen(false);
+    setSearchTerm("");
 
-    setTimeout(() => {
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    }, 100);
+    setActiveCategory("All");
+
+    scrollTop();
+  }
+
+  function openShop(
+    category = "All"
+  ) {
+    resetPages();
+
+    setShowShop(true);
+
+    setActiveCategory(category);
+
+    setSearchTerm("");
+
+    setSearchOpen(false);
+
+    scrollTop();
+  }
+
+  // =====================================================
+  // PRODUCT
+  // =====================================================
+
+  function openProduct(
+    product
+  ) {
+    resetPages();
+
+    setShowShop(false);
+
+    setSelectedProduct(
+      product
+    );
+
+    scrollTop();
   }
 
   // =====================================================
   // CART
-  // =====================================================
-
-  function openCart() {
-    setSelectedProduct(null);
-
-    setShowCheckout(false);
-
-    setShowOrders(false);
-
-    setShowProfile(false);
-
-    setShowAdminProducts(
-      false
-    );
-
-    setShowAdminOrders(
-      false
-    );
-
-    setSearchOpen(false);
-
-    setAccountMenuOpen(false);
-
-    scrollToSection(
-      "cart",
-      150
-    );
-  }
-
-  // =====================================================
-  // ADD TO CART
   // =====================================================
 
   function addToCart(
@@ -795,45 +958,40 @@ function App() {
       return false;
     }
 
-    const availableStock =
+    const stock =
       Number(
-        product.stock ?? 0
+        product.stock ??
+          0
       );
 
-    const requestedQuantity =
+    const requested =
       Number(
-        quantity ?? 1
+        quantity || 1
       );
 
-    if (
-      availableStock <= 0
-    ) {
+    if (stock <= 0) {
       alert(
-        `${product.name} is currently out of stock.`
+        `${product.name} is out of stock.`
       );
 
       return false;
     }
 
     if (
-      requestedQuantity >
-      availableStock
+      requested >
+      stock
     ) {
       alert(
-        `Only ${availableStock} ${
-          availableStock === 1
-            ? "item is"
-            : "items are"
-        } available for ${product.name}.`
+        `Only ${stock} items available.`
       );
 
       return false;
     }
 
     setCart(
-      (currentCart) => {
-        const existingProduct =
-          currentCart.find(
+      (current) => {
+        const existing =
+          current.find(
             (item) =>
               item.id ===
                 product.id &&
@@ -841,19 +999,19 @@ function App() {
                 size
           );
 
-        if (
-          existingProduct
-        ) {
-          return currentCart;
+        if (existing) {
+          return current;
         }
 
         return [
-          ...currentCart,
+          ...current,
           {
             ...product,
-            size,
+
             quantity:
-              requestedQuantity,
+              requested,
+
+            size,
           },
         ];
       }
@@ -862,37 +1020,26 @@ function App() {
     return true;
   }
 
-  // =====================================================
-  // PRODUCT DETAILS ADD TO CART
-  // =====================================================
-
   function handleAddToCart(
     product,
     quantity = 1,
     size = null
   ) {
-    if (!size) {
-      alert(
-        "Please select a size first."
-      );
-
-      return false;
-    }
-
-    const alreadyInCart =
+    const exists =
       cart.some(
         (item) =>
           item.id ===
             product.id &&
-          item.size === size
+          item.size ===
+            size
       );
 
-    if (alreadyInCart) {
+    if (
+      size &&
+      exists
+    ) {
       alert(
-        product.name +
-          " in size " +
-          size +
-          " is already in your bag."
+        `${product.name} size ${size} is already in your bag.`
       );
 
       return true;
@@ -904,154 +1051,41 @@ function App() {
       size
     );
   }
-
-  // =====================================================
-  // AI STYLIST ADD TO CART
-  // =====================================================
 
   function addFromAIStylist(
     product,
     quantity = 1,
     size = null
   ) {
-    if (!size) {
-      alert(
-        "Please select a size first."
-      );
-
-      return false;
-    }
-
-    const alreadyInCart =
-      cart.some(
-        (item) =>
-          item.id ===
-            product.id &&
-          item.size === size
-      );
-
-    if (alreadyInCart) {
-      alert(
-        product.name +
-          " in size " +
-          size +
-          " is already in your bag."
-      );
-
-      return true;
-    }
-
-    return addToCart(
+    return handleAddToCart(
       product,
       quantity,
       size
     );
   }
 
-  // =====================================================
-  // BUY NOW
-  // =====================================================
-
   function buyNow(
     product,
     quantity = 1,
     size = null
   ) {
-    if (!size) {
-      alert(
-        "Please select a size first."
+    const success =
+      handleAddToCart(
+        product,
+        quantity,
+        size
       );
 
+    if (!success) {
       return;
     }
-
-    const availableStock =
-      Number(
-        product.stock ?? 0
-      );
-
-    const requestedQuantity =
-      Number(
-        quantity ?? 1
-      );
-
-    if (
-      availableStock <= 0
-    ) {
-      alert(
-        `${product.name} is currently out of stock.`
-      );
-
-      return;
-    }
-
-    if (
-      requestedQuantity >
-      availableStock
-    ) {
-      alert(
-        `Only ${availableStock} ${
-          availableStock === 1
-            ? "item is"
-            : "items are"
-        } available for ${product.name}.`
-      );
-
-      return;
-    }
-
-    setCart(
-      (currentCart) => {
-        const existingProduct =
-          currentCart.find(
-            (item) =>
-              item.id ===
-                product.id &&
-              item.size ===
-                size
-          );
-
-        if (
-          existingProduct
-        ) {
-          return currentCart;
-        }
-
-        return [
-          ...currentCart,
-          {
-            ...product,
-            size,
-            quantity:
-              requestedQuantity,
-          },
-        ];
-      }
-    );
 
     setSelectedProduct(null);
 
-    setShowCheckout(false);
+    setShowShop(false);
 
-    setShowProfile(false);
-
-    setShowAdminProducts(
-      false
-    );
-
-    setShowAdminOrders(
-      false
-    );
-
-    scrollToSection(
-      "cart",
-      150
-    );
+    openCheckout();
   }
-
-  // =====================================================
-  // INCREASE QUANTITY WITH STOCK LIMIT
-  // =====================================================
 
   function increaseQuantity(
     id,
@@ -1063,85 +1097,56 @@ function App() {
           item.id === id
       );
 
-    const availableStock =
-      Number(
-        product?.stock ?? 0
-      );
-
-    const cartItem =
-      cart.find(
-        (item) =>
-          item.id === id &&
-          item.size === size
-      );
-
-    const currentQuantity =
-      Number(
-        cartItem?.quantity ?? 0
-      );
-
     if (!product) {
-      alert(
-        "This product is no longer available."
-      );
-
       return;
     }
 
-    if (
-      availableStock <= 0
-    ) {
-      alert(
-        `${product.name} is out of stock.`
+    const stock =
+      Number(
+        product.stock || 0
       );
-
-      return;
-    }
-
-    if (
-      currentQuantity >=
-      availableStock
-    ) {
-      alert(
-        `Only ${availableStock} ${
-          availableStock === 1
-            ? "item is"
-            : "items are"
-        } available for ${product.name}.`
-      );
-
-      return;
-    }
 
     setCart(
-      (currentCart) =>
-        currentCart.map(
-          (item) =>
-            item.id === id &&
-            item.size === size
-              ? {
-                  ...item,
+      (current) =>
+        current.map(
+          (item) => {
+            if (
+              item.id !== id ||
+              item.size !== size
+            ) {
+              return item;
+            }
 
-                  quantity:
-                    item.quantity +
-                    1,
-                }
-              : item
+            if (
+              item.quantity >=
+              stock
+            ) {
+              alert(
+                `Only ${stock} items available.`
+              );
+
+              return item;
+            }
+
+            return {
+              ...item,
+
+              quantity:
+                item.quantity +
+                1,
+            };
+          }
         )
     );
   }
-
-  // =====================================================
-  // DECREASE QUANTITY
-  // =====================================================
 
   function decreaseQuantity(
     id,
     size
   ) {
     setCart(
-      (currentCart) =>
-        currentCart
+      (current) =>
+        current
           .map(
             (item) =>
               item.id === id &&
@@ -1157,30 +1162,54 @@ function App() {
           )
           .filter(
             (item) =>
-              item.quantity > 0
+              item.quantity >
+              0
           )
     );
   }
-
-  // =====================================================
-  // REMOVE CART
-  // =====================================================
 
   function removeFromCart(
     id,
     size
   ) {
     setCart(
-      (currentCart) =>
-        currentCart.filter(
+      (current) =>
+        current.filter(
           (item) =>
             !(
-              item.id === id &&
-              item.size === size
+              item.id ===
+                id &&
+              item.size ===
+                size
             )
         )
     );
   }
+
+  const cartItems =
+    cart.reduce(
+      (total, item) =>
+        total +
+        Number(
+          item.quantity ||
+            0
+        ),
+      0
+    );
+
+  const cartTotal =
+    cart.reduce(
+      (total, item) =>
+        total +
+        Number(
+          item.price || 0
+        ) *
+          Number(
+            item.quantity ||
+              0
+          ),
+      0
+    );
 
   // =====================================================
   // WISHLIST
@@ -1190,18 +1219,16 @@ function App() {
     product
   ) {
     setWishlist(
-      (
-        currentWishlist
-      ) => {
+      (current) => {
         const exists =
-          currentWishlist.some(
+          current.some(
             (item) =>
               item.id ===
               product.id
           );
 
         if (exists) {
-          return currentWishlist.filter(
+          return current.filter(
             (item) =>
               item.id !==
               product.id
@@ -1209,7 +1236,7 @@ function App() {
         }
 
         return [
-          ...currentWishlist,
+          ...current,
           product,
         ];
       }
@@ -1217,85 +1244,343 @@ function App() {
   }
 
   function isWishlisted(
-    productId
+    id
   ) {
     return wishlist.some(
       (item) =>
-        item.id ===
-        productId
+        item.id === id
     );
   }
 
-  // =====================================================
-  // CART TOTAL
-  // =====================================================
 
-  const cartTotal =
-    cart.reduce(
-      (
-        total,
-        item
-      ) =>
-        total +
-        Number(
-          item.price || 0
-        ) *
-          Number(
-            item.quantity || 0
-          ),
-      0
-    );
-
-  // =====================================================
-  // CART COUNT
-  // =====================================================
-
-  const cartItems =
-    cart.reduce(
-      (
-        total,
-        item
-      ) =>
-        total +
-        Number(
-          item.quantity || 0
-        ),
-      0
-    );
-
-  // =====================================================
-  // OPEN PRODUCT
-  // =====================================================
-
-  function openProduct(
-    product
-  ) {
-    setSelectedProduct(
-      product
-    );
-
-    setShowCheckout(false);
-
-    setShowOrders(false);
-
-    setShowProfile(false);
-
-    setShowAdminProducts(
-      false
-    );
-
-    setShowAdminOrders(
-      false
-    );
-
+  function openWishlistPage() {
+    resetPages();
+    setShowShop(false);
+    setShowWishlistPage(true);
     setSearchOpen(false);
-
+    setBagDrawerOpen(false);
     setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+    scrollTop();
+  }
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+  function removeWishlistItem(id) {
+    setWishlist((current) =>
+      current.filter(
+        (item) =>
+          item.id !== id
+      )
+    );
+  }
+
+  function openBagDrawer() {
+    setBagDrawerOpen(true);
+    setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function renderSearchOverlay() {
+    if (!searchOpen) {
+      return null;
+    }
+
+    const visibleResults = liveSearchResults.slice(0, 8);
+    const popularCategories = [
+      "Shirts",
+      "T-Shirts",
+      "Trousers",
+      "Hoodies",
+    ];
+
+    return (
+      <div className="lume-search-overlay">
+        <div className="search-overlay-header">
+          <button
+            type="button"
+            className="search-brand"
+            onClick={() => {
+              closeSearchOverlay();
+              goHome();
+            }}
+          >
+            LUMÉ
+          </button>
+
+          <button
+            type="button"
+            className="search-close"
+            aria-label="Close search"
+            onClick={() => closeSearchOverlay()}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="search-overlay-main">
+          <div className="search-input-wrap">
+            <span className="search-input-icon">⌕</span>
+
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search LUMÉ"
+              autoFocus
+              aria-label="Search products"
+            />
+
+            {searchTerm && (
+              <button
+                type="button"
+                className="search-clear-input"
+                onClick={() => setSearchTerm("")}
+              >
+                CLEAR
+              </button>
+            )}
+          </div>
+
+          <div className="search-overlay-content">
+            <aside className="search-discovery">
+              {recentSearches.length > 0 && (
+                <section className="search-discovery-section">
+                  <div className="search-section-heading">
+                    <span>RECENT SEARCHES</span>
+
+                    <button
+                      type="button"
+                      onClick={clearRecentSearches}
+                    >
+                      CLEAR
+                    </button>
+                  </div>
+
+                  <div className="recent-search-list">
+                    {recentSearches.map((item) => (
+                      <button
+                        type="button"
+                        key={item}
+                        onClick={() => setSearchTerm(item)}
+                      >
+                        <span>↗</span>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="search-discovery-section">
+                <div className="search-section-heading">
+                  <span>POPULAR CATEGORIES</span>
+                </div>
+
+                <div className="search-category-list">
+                  {popularCategories.map((category) => (
+                    <button
+                      type="button"
+                      key={category}
+                      onClick={() => searchCategory(category)}
+                    >
+                      {category}
+                      <span>→</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </aside>
+
+            <section className="search-results-panel">
+              {!normalizedSearchTerm ? (
+                <div className="search-start-message">
+                  <p>SEARCH THE COLLECTION</p>
+                  <h2>Find your next LUMÉ piece.</h2>
+                  <span>
+                    Search by product name or category.
+                  </span>
+                </div>
+              ) : visibleResults.length > 0 ? (
+                <>
+                  <div className="search-results-heading">
+                    <div>
+                      <span>SEARCH RESULTS</span>
+                      <strong>
+                        {liveSearchResults.length} MATCH
+                        {liveSearchResults.length === 1 ? "" : "ES"}
+                      </strong>
+                    </div>
+
+                    <span>“{searchTerm.trim()}”</span>
+                  </div>
+
+                  <div className="search-results-grid">
+                    {visibleResults.map((product) => (
+                      <button
+                        type="button"
+                        className="search-result-card"
+                        key={product.id}
+                        onClick={() => openSearchProduct(product)}
+                      >
+                        <div className="search-result-image">
+                          <img
+                            src={resolveProductImage(product)}
+                            alt={product.name}
+                            onError={(event) =>
+                              handleProductImageError(event, product)
+                            }
+                          />
+
+                          <span
+                            className={
+                              Number(product.stock || 0) > 0
+                                ? "available"
+                                : "sold-out"
+                            }
+                          >
+                            {Number(product.stock || 0) > 0
+                              ? "IN STOCK"
+                              : "SOLD OUT"}
+                          </span>
+                        </div>
+
+                        <div className="search-result-info">
+                          <span>{product.category}</span>
+                          <h3>{product.name}</h3>
+                          <strong>
+                            ₹{Number(product.price || 0).toLocaleString("en-IN")}
+                          </strong>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="search-view-all"
+                    onClick={showAllSearchResults}
+                  >
+                    VIEW ALL {liveSearchResults.length} RESULTS →
+                  </button>
+                </>
+              ) : (
+                <div className="search-no-results">
+                  <span>NO RESULTS</span>
+                  <h2>Nothing matched “{searchTerm.trim()}”.</h2>
+                  <p>
+                    Try another product name or browse one of the categories.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  function openQuickView(product) {
+    setQuickViewProduct(product);
+
+    const sizes =
+      Array.isArray(product.sizes)
+        ? product.sizes
+        : [];
+
+    setQuickViewSize(
+      sizes.length === 1
+        ? sizes[0]
+        : ""
+    );
+
+    setQuickViewQuantity(1);
+
+    setBagDrawerOpen(false);
+    setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function closeQuickView() {
+    setQuickViewProduct(null);
+    setQuickViewSize("");
+    setQuickViewQuantity(1);
+  }
+
+  function increaseQuickViewQuantity() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const stock =
+      Number(
+        quickViewProduct.stock || 0
+      );
+
+    setQuickViewQuantity(
+      (current) =>
+        current < stock
+          ? current + 1
+          : current
+    );
+  }
+
+  function decreaseQuickViewQuantity() {
+    setQuickViewQuantity(
+      (current) =>
+        current > 1
+          ? current - 1
+          : 1
+    );
+  }
+
+  function addQuickViewToBag() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const success =
+      handleAddToCart(
+        quickViewProduct,
+        quickViewQuantity,
+        quickViewSize
+      );
+
+    if (success) {
+      closeQuickView();
+      openBagDrawer();
+    }
+  }
+
+  function buyQuickViewNow() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const product =
+      quickViewProduct;
+
+    const quantity =
+      quickViewQuantity;
+
+    const size =
+      quickViewSize;
+
+    closeQuickView();
+
+    buyNow(
+      product,
+      quantity,
+      size
+    );
+  }
+
+  function closeBagDrawer() {
+    setBagDrawerOpen(false);
+  }
+
+  function goToCheckoutFromBag() {
+    setBagDrawerOpen(false);
+    openCheckout();
   }
 
   // =====================================================
@@ -1303,7 +1588,9 @@ function App() {
   // =====================================================
 
   function openCheckout() {
-    if (cart.length === 0) {
+    if (
+      cart.length === 0
+    ) {
       alert(
         "Your shopping bag is empty."
       );
@@ -1313,12 +1600,10 @@ function App() {
 
     if (!user) {
       alert(
-        "Please sign in before proceeding to checkout."
+        "Please sign in before checkout."
       );
 
       setShowAuth(true);
-
-      setAccountMenuOpen(false);
 
       return;
     }
@@ -1327,69 +1612,37 @@ function App() {
       !user.emailVerified
     ) {
       alert(
-        "Please verify your email before proceeding to checkout."
+        "Please verify your email before checkout."
       );
-
-      setShowCheckout(false);
-
-      setSearchOpen(false);
 
       setAccountMenuOpen(true);
 
       return;
     }
 
-    setShowOrders(false);
+    resetPages();
 
-    setShowProfile(false);
-
-    setShowAdminProducts(
-      false
-    );
-
-    setShowAdminOrders(
-      false
-    );
-
-    setSelectedProduct(null);
+    setShowShop(false);
 
     setShowCheckout(true);
 
-    setSearchOpen(false);
-
-    setAccountMenuOpen(false);
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    scrollTop();
   }
-
-  // =====================================================
-  // ORDER COMPLETED
-  // =====================================================
 
   async function handleOrderPlaced(
     order
   ) {
     console.log(
-      "Order completed:",
+      "Order placed:",
       order
     );
 
     setCart([]);
 
-    try {
-      localStorage.setItem(
-        "lume-cart",
-        JSON.stringify([])
-      );
-    } catch (error) {
-      console.error(
-        "Could not clear local cart:",
-        error
-      );
-    }
+    localStorage.setItem(
+      "lume-cart",
+      "[]"
+    );
 
     if (
       auth.currentUser
@@ -1411,213 +1664,14 @@ function App() {
             merge: true,
           }
         );
-
-        console.log(
-          "Cart cleared after order."
-        );
       } catch (error) {
-        console.error(
-          "Could not clear Firestore cart after order:",
-          error
-        );
+        console.error(error);
       }
     }
-  }
-
-  // =====================================================
-  // CATEGORY
-  // =====================================================
-
-  function selectCategory(
-    category
-  ) {
-    setActiveCategory(
-      category
-    );
-
-    setSearchTerm("");
-
-    scrollToSection(
-      "products"
-    );
-  }
-
-  // =====================================================
-  // AI STYLIST
-  // =====================================================
-
-  function openAIStylist() {
-    scrollToSection(
-      "ai-chat-box",
-      100
-    );
-
-    setTimeout(() => {
-      const input =
-        document.querySelector(
-          ".ai-input-area input"
-        );
-
-      if (input) {
-        input.focus();
-      }
-    }, 500);
   }
 
   // =====================================================
   // ACCOUNT
-  // =====================================================
-
-  function openAccount() {
-    setSearchOpen(false);
-
-    if (authLoading) {
-      return;
-    }
-
-    if (!user) {
-      setShowAuth(true);
-
-      setAccountMenuOpen(
-        false
-      );
-
-      return;
-    }
-
-    setAccountMenuOpen(
-      (current) =>
-        !current
-    );
-  }
-
-  // =====================================================
-  // CHECK EMAIL VERIFICATION
-  // =====================================================
-
-  async function checkEmailVerification() {
-    if (
-      !auth.currentUser
-    ) {
-      alert(
-        "Please sign in first."
-      );
-
-      return;
-    }
-
-    try {
-      setCheckingVerification(
-        true
-      );
-
-      await reload(
-        auth.currentUser
-      );
-
-      const refreshedUser =
-        auth.currentUser;
-
-      setUser(
-        refreshedUser
-      );
-
-      await setDoc(
-        doc(
-          db,
-          "users",
-          refreshedUser.uid
-        ),
-        {
-          email:
-            refreshedUser.email ||
-            "",
-
-          emailVerified:
-            refreshedUser.emailVerified,
-
-          updatedAt:
-            serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
-
-      if (
-        refreshedUser.emailVerified
-      ) {
-        alert(
-          "Email verified successfully! ✅"
-        );
-      } else {
-        alert(
-          "Your email is not verified yet. Open the verification email, click the link, then click CHECK VERIFICATION again."
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Verification error:",
-        error
-      );
-
-      alert(
-        "Could not check verification status."
-      );
-    } finally {
-      setCheckingVerification(
-        false
-      );
-    }
-  }
-
-  // =====================================================
-  // LOGOUT
-  // =====================================================
-
-  async function handleLogout() {
-    try {
-      await signOut(auth);
-
-      setAccountMenuOpen(
-        false
-      );
-
-      setShowAuth(false);
-
-      setShowOrders(false);
-
-      setShowProfile(false);
-
-      setShowCheckout(false);
-
-      setShowAdminProducts(
-        false
-      );
-
-      setShowAdminOrders(
-        false
-      );
-
-      setIsAdmin(false);
-
-      alert(
-        "You have been signed out."
-      );
-    } catch (error) {
-      console.error(
-        "Logout error:",
-        error
-      );
-
-      alert(
-        "Could not sign out."
-      );
-    }
-  }
-
-  // =====================================================
-  // USER NAME
   // =====================================================
 
   function getUserName() {
@@ -1631,415 +1685,470 @@ function App() {
       return user.displayName;
     }
 
-    if (user.email) {
-      return user.email.split(
+    return (
+      user.email?.split(
         "@"
-      )[0];
-    }
-
-    return "Customer";
+      )[0] ||
+      "Customer"
+    );
   }
 
-  // =====================================================
-  // HEADER
-  // =====================================================
+  function openAccount() {
+    if (
+      authLoading
+    ) {
+      return;
+    }
 
-  function renderHeader(
-    showFullNavigation = false
-  ) {
+    if (!user) {
+      setShowAuth(true);
+
+      return;
+    }
+
+    setAccountMenuOpen(
+      (value) =>
+        !value
+    );
+  }
+
+  async function checkEmailVerification() {
+    if (
+      !auth.currentUser
+    ) {
+      return;
+    }
+
+    try {
+      setCheckingVerification(
+        true
+      );
+
+      await reload(
+        auth.currentUser
+      );
+
+      const refreshed =
+        auth.currentUser;
+
+      setUser(refreshed);
+
+      await setDoc(
+        doc(
+          db,
+          "users",
+          refreshed.uid
+        ),
+        {
+          emailVerified:
+            refreshed.emailVerified,
+
+          updatedAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      );
+
+      alert(
+        refreshed.emailVerified
+          ? "Email verified successfully."
+          : "Email is not verified yet."
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setCheckingVerification(
+        false
+      );
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await signOut(auth);
+
+      resetPages();
+
+      setShowShop(false);
+
+      alert(
+        "You have been signed out."
+      );
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  function renderBagDrawer() {
+    if (!bagDrawerOpen) {
+      return null;
+    }
+
     return (
-      <header className="navbar">
-
-        <button
-          type="button"
-          className="brand"
-          onClick={goHome}
+      <div
+        className="lume-bag-overlay"
+        onClick={closeBagDrawer}
+      >
+        <aside
+          className="lume-bag-drawer"
+          onClick={(event) => event.stopPropagation()}
         >
-          LUMÉ
-        </button>
-
-        {showFullNavigation && (
-          <nav>
-            <a href="#home">
-              Home
-            </a>
-
-            <a href="#categories">
-              Categories
-            </a>
-
-            <a href="#products">
-              Shop
-            </a>
-
-            <a href="#ai">
-              AI Stylist
-            </a>
-          </nav>
-        )}
-
-        <div className="nav-icons">
-
-          {showFullNavigation && (
-            <>
-              <button
-                type="button"
-                aria-label="Search"
-                onClick={() => {
-                  setSearchOpen(
-                    (value) =>
-                      !value
-                  );
-
-                  setAccountMenuOpen(
-                    false
-                  );
-                }}
-              >
-                ⌕
-              </button>
-
-              <button
-                type="button"
-                aria-label="Wishlist"
-                onClick={() => {
-                  setAccountMenuOpen(
-                    false
-                  );
-
-                  alert(
-                    "Wishlist: " +
-                      wishlist.length +
-                      " item" +
-                      (
-                        wishlist.length ===
-                        1
-                          ? ""
-                          : "s"
-                      )
-                  );
-                }}
-              >
-                ♡
-
-                {wishlist.length >
-                  0 && (
-                  <span className="cart-count">
-                    {
-                      wishlist.length
-                    }
-                  </span>
-                )}
-              </button>
-            </>
-          )}
-
-          <div className="account-wrapper">
+          <div className="bag-drawer-header">
+            <div>
+              <p>YOUR BAG</p>
+              <strong>{cartItems} ITEM{cartItems === 1 ? "" : "S"}</strong>
+            </div>
 
             <button
               type="button"
-              className="account-button"
-              onClick={
-                openAccount
-              }
-              aria-label={
-                user
-                  ? "Open account"
-                  : "Sign in"
-              }
-              disabled={
-                authLoading
-              }
+              aria-label="Close bag"
+              onClick={closeBagDrawer}
             >
-              👤
+              ×
             </button>
+          </div>
 
-            {user &&
-              accountMenuOpen && (
+          {cart.length === 0 ? (
+            <div className="bag-drawer-empty">
+              <p>Your bag is empty.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  closeBagDrawer();
+                  openShop("All");
+                }}
+              >
+                CONTINUE SHOPPING
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="bag-drawer-items">
+                {cart.map((item) => (
+                  <article
+                    className="bag-drawer-item"
+                    key={`${item.id}-${item.size}`}
+                  >
+                    <button
+                      type="button"
+                      className="bag-item-image"
+                      onClick={() => {
+                        closeBagDrawer();
+                        openProduct(item);
+                      }}
+                    >
+                      <img
+                        src={resolveProductImage(item)}
+                        alt={item.name}
+                        onError={(event) => handleProductImageError(event, item)}
+                      />
+                    </button>
 
-                <div className="account-menu">
-
-                  <p className="account-welcome">
-                    Welcome
-                  </p>
-
-                  <strong>
-                    {
-                      getUserName()
-                    }
-                  </strong>
-
-                  {user.email && (
-                    <small>
-                      {
-                        user.email
-                      }
-                    </small>
-                  )}
-
-                  {isAdmin && (
-                    <small>
-                      ADMIN ACCOUNT
-                    </small>
-                  )}
-
-                  {syncingAccount && (
-                    <small className="account-syncing">
-                      Syncing account...
-                    </small>
-                  )}
-
-                  <div className="verification-status">
-
-                    {user.emailVerified ? (
-
-                      <p className="verified-email">
-                        ✓ Email verified
-                      </p>
-
-                    ) : (
-
-                      <>
-                        <p className="unverified-email">
-                          ⚠ Email not verified
-                        </p>
+                    <div className="bag-item-content">
+                      <div className="bag-item-top">
+                        <div>
+                          <h3>{item.name}</h3>
+                          <p>SIZE: {item.size}</p>
+                        </div>
 
                         <button
                           type="button"
-                          className="check-verification-button"
-                          onClick={
-                            checkEmailVerification
-                          }
-                          disabled={
-                            checkingVerification
+                          className="bag-remove"
+                          onClick={() =>
+                            removeFromCart(item.id, item.size)
                           }
                         >
-                          {checkingVerification
-                            ? "CHECKING..."
-                            : "CHECK VERIFICATION"}
+                          ×
                         </button>
-                      </>
+                      </div>
 
-                    )}
+                      <div className="bag-item-price-row">
+                        <strong>
+                          ₹{Number(item.price || 0).toLocaleString("en-IN")}
+                        </strong>
 
-                  </div>
+                        <span>
+                          {Number(item.stock || 0) > 0
+                            ? `${item.stock} in stock`
+                            : "Sold out"}
+                        </span>
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowProfile(
-                        true
-                      );
+                      <div className="bag-quantity">
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${item.name} quantity`}
+                          onClick={() =>
+                            decreaseQuantity(item.id, item.size)
+                          }
+                        >
+                          −
+                        </button>
 
-                      setShowOrders(
-                        false
-                      );
+                        <span>{item.quantity}</span>
 
-                      setShowAdminProducts(
-                        false
-                      );
+                        <button
+                          type="button"
+                          aria-label={`Increase ${item.name} quantity`}
+                          disabled={
+                            Number(item.stock || 0) > 0 &&
+                            Number(item.quantity || 1) >= Number(item.stock || 0)
+                          }
+                          onClick={() =>
+                            increaseQuantity(item.id, item.size)
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
 
-                      setShowAdminOrders(
-                        false
-                      );
+                      <div className="bag-line-total">
+                        <span>ITEM TOTAL</span>
+                        <strong>
+                          ₹{(
+                            Number(item.price || 0) *
+                            Number(item.quantity || 1)
+                          ).toLocaleString("en-IN")}
+                        </strong>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
 
-                      setSelectedProduct(
-                        null
-                      );
-
-                      setShowCheckout(
-                        false
-                      );
-
-                      setSearchOpen(
-                        false
-                      );
-
-                      setAccountMenuOpen(
-                        false
-                      );
-
-                      window.scrollTo({
-                        top: 0,
-                        behavior:
-                          "smooth",
-                      });
-                    }}
-                  >
-                    MY PROFILE
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowProfile(
-                        false
-                      );
-
-                      setShowOrders(
-                        true
-                      );
-
-                      setShowAdminProducts(
-                        false
-                      );
-
-                      setShowAdminOrders(
-                        false
-                      );
-
-                      setSelectedProduct(
-                        null
-                      );
-
-                      setShowCheckout(
-                        false
-                      );
-
-                      setSearchOpen(
-                        false
-                      );
-
-                      setAccountMenuOpen(
-                        false
-                      );
-
-                      window.scrollTo({
-                        top: 0,
-                        behavior:
-                          "smooth",
-                      });
-                    }}
-                  >
-                    MY ORDERS
-                  </button>
-
-                  {isAdmin && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAdminProducts(
-                            true
-                          );
-
-                          setShowProfile(
-                            false
-                          );
-
-                          setShowAdminOrders(
-                            false
-                          );
-
-                          setShowOrders(
-                            false
-                          );
-
-                          setSelectedProduct(
-                            null
-                          );
-
-                          setShowCheckout(
-                            false
-                          );
-
-                          setSearchOpen(
-                            false
-                          );
-
-                          setAccountMenuOpen(
-                            false
-                          );
-
-                          window.scrollTo({
-                            top: 0,
-                            behavior:
-                              "smooth",
-                          });
-                        }}
-                      >
-                        ADMIN PRODUCTS
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAdminOrders(
-                            true
-                          );
-
-                          setShowProfile(
-                            false
-                          );
-
-                          setShowAdminProducts(
-                            false
-                          );
-
-                          setShowOrders(
-                            false
-                          );
-
-                          setSelectedProduct(
-                            null
-                          );
-
-                          setShowCheckout(
-                            false
-                          );
-
-                          setSearchOpen(
-                            false
-                          );
-
-                          setAccountMenuOpen(
-                            false
-                          );
-
-                          window.scrollTo({
-                            top: 0,
-                            behavior:
-                              "smooth",
-                          });
-                        }}
-                      >
-                        ADMIN ORDERS
-                      </button>
-                    </>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={
-                      handleLogout
-                    }
-                  >
-                    SIGN OUT
-                  </button>
-
+              <div className="bag-drawer-footer">
+                <div className="bag-subtotal">
+                  <span>SUBTOTAL</span>
+                  <strong>
+                    ₹{Number(cartTotal || 0).toLocaleString("en-IN")}
+                  </strong>
                 </div>
-              )}
 
-          </div>
+                <p>
+                  Free standard delivery. Final order details are verified at checkout.
+                </p>
 
+                <button
+                  type="button"
+                  className="bag-checkout-button"
+                  onClick={goToCheckoutFromBag}
+                >
+                  CHECKOUT
+                </button>
+
+                <button
+                  type="button"
+                  className="bag-continue-button"
+                  onClick={closeBagDrawer}
+                >
+                  CONTINUE SHOPPING
+                </button>
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
+    );
+  }
+
+  function renderQuickView() {
+    if (!quickViewProduct) {
+      return null;
+    }
+
+    const sizes =
+      Array.isArray(quickViewProduct.sizes)
+        ? quickViewProduct.sizes
+        : [];
+
+    const stock =
+      Number(
+        quickViewProduct.stock || 0
+      );
+
+    return (
+      <div
+        className="lume-quick-view-overlay"
+        onClick={closeQuickView}
+      >
+        <section
+          className="lume-quick-view"
+          onClick={(event) =>
+            event.stopPropagation()
+          }
+        >
           <button
             type="button"
-            className="cart-button"
-            onClick={openCart}
-            aria-label="Shopping cart"
+            className="quick-view-close"
+            aria-label="Close quick view"
+            onClick={closeQuickView}
           >
-            🛒
-
-            {cartItems > 0 && (
-              <span className="cart-count">
-                {cartItems}
-              </span>
-            )}
+            ×
           </button>
 
-        </div>
+          <div className="quick-view-image">
+            <img
+              src={resolveProductImage(quickViewProduct)}
+              alt={quickViewProduct.name}
+              onError={(event) =>
+                handleProductImageError(event, quickViewProduct)
+              }
+            />
+          </div>
 
-      </header>
+          <div className="quick-view-content">
+            <p className="quick-view-eyebrow">
+              {quickViewProduct.category || "LUMÉ"}
+            </p>
+
+            <h2>
+              {quickViewProduct.name}
+            </h2>
+
+            <div className="quick-view-rating">
+              <span>
+                ★ {Number(
+                  quickViewProduct.rating || 0
+                ).toFixed(1)}
+              </span>
+
+              <span>
+                {stock > 0
+                  ? `${stock} IN STOCK`
+                  : "SOLD OUT"}
+              </span>
+            </div>
+
+            <div className="quick-view-price">
+              ₹{Number(
+                quickViewProduct.price || 0
+              ).toLocaleString("en-IN")}
+            </div>
+
+            {quickViewProduct.description && (
+              <p className="quick-view-description">
+                {quickViewProduct.description}
+              </p>
+            )}
+
+            <div className="quick-view-section">
+              <div className="quick-view-section-title">
+                <span>SELECT SIZE</span>
+                {quickViewSize && (
+                  <strong>
+                    {quickViewSize}
+                  </strong>
+                )}
+              </div>
+
+              <div className="quick-view-sizes">
+                {sizes.map((size) => (
+                  <button
+                    type="button"
+                    key={size}
+                    className={
+                      quickViewSize === size
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setQuickViewSize(size)
+                    }
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="quick-view-section">
+              <span className="quick-view-label">
+                QUANTITY
+              </span>
+
+              <div className="quick-view-quantity">
+                <button
+                  type="button"
+                  onClick={decreaseQuickViewQuantity}
+                >
+                  −
+                </button>
+
+                <span>
+                  {quickViewQuantity}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={
+                    stock <= 0 ||
+                    quickViewQuantity >= stock
+                  }
+                  onClick={increaseQuickViewQuantity}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="quick-view-actions">
+              <button
+                type="button"
+                className="quick-view-wishlist"
+                onClick={() =>
+                  toggleWishlist(
+                    quickViewProduct
+                  )
+                }
+                aria-label="Toggle wishlist"
+              >
+                {isWishlisted(
+                  quickViewProduct.id
+                )
+                  ? "♥"
+                  : "♡"}
+              </button>
+
+              <button
+                type="button"
+                className="quick-view-add"
+                disabled={stock <= 0}
+                onClick={addQuickViewToBag}
+              >
+                {stock <= 0
+                  ? "SOLD OUT"
+                  : "ADD TO BAG"}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="quick-view-buy"
+              disabled={stock <= 0}
+              onClick={buyQuickViewNow}
+            >
+              BUY NOW
+            </button>
+
+            <button
+              type="button"
+              className="quick-view-full"
+              onClick={() => {
+                const product =
+                  quickViewProduct;
+
+                closeQuickView();
+
+                openProduct(product);
+              }}
+            >
+              VIEW FULL DETAILS →
+            </button>
+          </div>
+        </section>
+      </div>
     );
   }
 
@@ -2048,7 +2157,9 @@ function App() {
   // =====================================================
 
   function renderAuth() {
-    if (!showAuth) {
+    if (
+      !showAuth
+    ) {
       return null;
     }
 
@@ -2062,36 +2173,419 @@ function App() {
   }
 
   // =====================================================
-  // PROFILE PAGE
+  // INNER PAGE HEADER
   // =====================================================
 
-  if (showProfile) {
+  function renderInnerHeader(
+    title = ""
+  ) {
     return (
-      <div className="store">
+      <>
+        <header className="lume-inner-header">
 
-        {renderHeader(false)}
+          <button
+            type="button"
+            className="inner-back"
+            onClick={goHome}
+            aria-label="Go back home"
+          >
+            ‹
+          </button>
 
-        <Profile
-          onBack={() => {
-            setShowProfile(false);
+          <button
+            type="button"
+            className="inner-logo"
+            onClick={goHome}
+          >
+            L U M É
+          </button>
 
-            setTimeout(() => {
+          <div className="inner-actions">
+
+            {title && (
+              <span className="inner-title">
+                {title}
+              </span>
+            )}
+
+            <button
+              type="button"
+              className="inner-wishlist"
+              onClick={openWishlistPage}
+              aria-label="Open wishlist"
+            >
+              ♡
+
+              {wishlist.length > 0 && (
+                <span>
+                  {wishlist.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="inner-account"
+              onClick={openAccount}
+              aria-label={
+                user
+                  ? "Open account menu"
+                  : "Sign in"
+              }
+            >
+              <span className="inner-account-icon">
+                {user ? "●" : "○"}
+              </span>
+
+              <span className="inner-account-label">
+                {user ? "ACCOUNT" : "SIGN IN"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="inner-bag"
+              onClick={openBagDrawer}
+              aria-label="Open bag"
+            >
+              ▢
+
+              {cartItems > 0 && (
+                <span>
+                  {cartItems}
+                </span>
+              )}
+            </button>
+
+          </div>
+
+        </header>
+
+        {user && accountMenuOpen && (
+          <div className="lume-floating-account inner-page-account-menu">
+
+            <button
+              type="button"
+              className="floating-account-close"
+              onClick={() =>
+                setAccountMenuOpen(false)
+              }
+              aria-label="Close account menu"
+            >
+              ×
+            </button>
+
+            <p>ACCOUNT</p>
+
+            <strong>
+              {getUserName()}
+            </strong>
+
+            {user.email && (
+              <span>
+                {user.email}
+              </span>
+            )}
+
+            {!user.emailVerified && (
+              <button
+                type="button"
+                onClick={checkEmailVerification}
+              >
+                {checkingVerification
+                  ? "CHECKING..."
+                  : "VERIFY EMAIL"}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                resetPages();
+                setAccountMenuOpen(false);
+                setShowProfile(true);
+                scrollTop();
+              }}
+            >
+              MY PROFILE
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetPages();
+                setAccountMenuOpen(false);
+                setShowOrders(true);
+                scrollTop();
+              }}
+            >
+              MY ORDERS
+            </button>
+
+            <button
+              type="button"
+              onClick={openWishlistPage}
+            >
+              WISHLIST ({wishlist.length})
+            </button>
+
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetPages();
+                    setAccountMenuOpen(false);
+                    setShowAdminProducts(true);
+                    scrollTop();
+                  }}
+                >
+                  ADMIN PRODUCTS
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetPages();
+                    setAccountMenuOpen(false);
+                    setShowAdminOrders(true);
+                    scrollTop();
+                  }}
+                >
+                  ADMIN ORDERS
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLogout}
+            >
+              SIGN OUT
+            </button>
+
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderFooter() {
+    function handleNewsletterSubmit(event) {
+      event.preventDefault();
+
+      const email = newsletterEmail.trim();
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setNewsletterMessage("Enter a valid email address.");
+        return;
+      }
+
+      setNewsletterMessage("Welcome to LUMÉ.");
+      setNewsletterEmail("");
+    }
+
+    const footerShopLinks = [
+      ["NEW ARRIVALS", "All"],
+      ["SHIRTS", "Shirts"],
+      ["T-SHIRTS", "T-Shirts"],
+      ["BOTTOMS", "Trousers"],
+      ["HOODIES", "Hoodies"],
+    ];
+
+    return (
+      <footer className="lume-site-footer">
+        <section className="lume-newsletter">
+          <div className="newsletter-copy">
+            <p>LUMÉ NOTES</p>
+            <h2>Wear your story.</h2>
+            <span>
+              New drops, styling notes and collection updates — delivered
+              occasionally.
+            </span>
+          </div>
+
+          <form
+            className="newsletter-form"
+            onSubmit={handleNewsletterSubmit}
+          >
+            <label htmlFor="lume-newsletter-email">EMAIL ADDRESS</label>
+
+            <div>
+              <input
+                id="lume-newsletter-email"
+                type="email"
+                value={newsletterEmail}
+                onChange={(event) => {
+                  setNewsletterEmail(event.target.value);
+                  setNewsletterMessage("");
+                }}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+
+              <button type="submit">JOIN →</button>
+            </div>
+
+            {newsletterMessage && (
+              <span className="newsletter-message">
+                {newsletterMessage}
+              </span>
+            )}
+          </form>
+        </section>
+
+        <section className="lume-footer-links">
+          <div className="footer-brand-column">
+            <button
+              type="button"
+              className="footer-logo"
+              onClick={goHome}
+            >
+              LUMÉ
+            </button>
+
+            <p>WEAR YOUR STORY</p>
+
+            <span>
+              Minimal clothing for everyday expression.
+            </span>
+          </div>
+
+          <div className="footer-link-column">
+            <h3>SHOP</h3>
+
+            {footerShopLinks.map(([label, category]) => (
+              <button
+                type="button"
+                key={label}
+                onClick={() => openShop(category)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="footer-link-column">
+            <h3>HELP</h3>
+
+            <button type="button" onClick={openAccount}>
+              MY ACCOUNT
+            </button>
+
+            <button type="button" onClick={() => setShowOrders(true)}>
+              MY ORDERS
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/shipping.html";
+              }}
+            >
+              SHIPPING
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/returns.html";
+              }}
+            >
+              RETURNS
+            </button>
+
+            <a href="mailto:support@lume.store">CONTACT</a>
+          </div>
+
+          <div className="footer-link-column">
+            <h3>COMPANY</h3>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/about.html";
+              }}
+            >
+              ABOUT LUMÉ
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/privacy.html";
+              }}
+            >
+              PRIVACY
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/terms.html";
+              }}
+            >
+              TERMS
+            </button>
+          </div>
+
+          <div className="footer-link-column footer-social-column">
+            <h3>FOLLOW</h3>
+            <span>INSTAGRAM</span>
+            <span>PINTEREST</span>
+            <span>YOUTUBE</span>
+          </div>
+        </section>
+
+        <section className="lume-footer-bottom">
+          <span>© 2026 LUMÉ. ALL RIGHTS RESERVED.</span>
+          <span>INDIA · INR ₹</span>
+          <button
+            type="button"
+            onClick={() =>
               window.scrollTo({
                 top: 0,
                 behavior: "smooth",
-              });
-            }, 100);
-          }}
+              })
+            }
+          >
+            BACK TO TOP ↑
+          </button>
+        </section>
+      </footer>
+    );
+  }
+
+  // =====================================================
+  // PROFILE PAGE
+  // =====================================================
+
+  if (
+    showProfile
+  ) {
+    return (
+      <div className="store">
+
+        {renderInnerHeader()}
+
+        <Profile
+          onBack={
+            goHome
+          }
         />
 
         {renderAuth()}
+
+        {renderQuickView()}
+
+        {renderBagDrawer()}
 
       </div>
     );
   }
 
   // =====================================================
-  // ADMIN PRODUCTS PAGE
+  // ADMIN PRODUCTS
   // =====================================================
 
   if (
@@ -2101,32 +2595,24 @@ function App() {
     return (
       <div className="store">
 
-        {renderHeader(false)}
+        {renderInnerHeader()}
 
         <AdminProducts
-          onBack={() => {
-            setShowAdminProducts(
-              false
-            );
-
-            setTimeout(() => {
-              window.scrollTo({
-                top: 0,
-                behavior:
-                  "smooth",
-              });
-            }, 100);
-          }}
+          onBack={
+            goHome
+          }
         />
 
         {renderAuth()}
+
+        {renderBagDrawer()}
 
       </div>
     );
   }
 
   // =====================================================
-  // ADMIN ORDERS PAGE
+  // ADMIN ORDERS
   // =====================================================
 
   if (
@@ -2136,91 +2622,578 @@ function App() {
     return (
       <div className="store">
 
-        {renderHeader(false)}
+        {renderInnerHeader()}
 
         <AdminOrders
-          onBack={() => {
-            setShowAdminOrders(
-              false
-            );
-
-            setTimeout(() => {
-              window.scrollTo({
-                top: 0,
-                behavior:
-                  "smooth",
-              });
-            }, 100);
-          }}
+          onBack={
+            goHome
+          }
         />
 
         {renderAuth()}
+
+        {renderBagDrawer()}
 
       </div>
     );
   }
 
   // =====================================================
-  // MY ORDERS PAGE
+  // MY ORDERS
   // =====================================================
 
-  if (showOrders) {
+  if (
+    showOrders
+  ) {
     return (
       <div className="store">
 
-        {renderHeader(false)}
+        {renderInnerHeader()}
 
         <MyOrders
-          onBack={() => {
-            setShowOrders(false);
-
-            setTimeout(() => {
-              window.scrollTo({
-                top: 0,
-                behavior:
-                  "smooth",
-              });
-            }, 100);
-          }}
+          onBack={
+            goHome
+          }
         />
 
         {renderAuth()}
+
+        {renderBagDrawer()}
 
       </div>
     );
   }
 
+  function openBagDrawer() {
+    setBagDrawerOpen(true);
+    setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function renderSearchOverlay() {
+    if (!searchOpen) {
+      return null;
+    }
+
+    const visibleResults = liveSearchResults.slice(0, 8);
+    const popularCategories = [
+      "Shirts",
+      "T-Shirts",
+      "Trousers",
+      "Hoodies",
+    ];
+
+    return (
+      <div className="lume-search-overlay">
+        <div className="search-overlay-header">
+          <button
+            type="button"
+            className="search-brand"
+            onClick={() => {
+              closeSearchOverlay();
+              goHome();
+            }}
+          >
+            LUMÉ
+          </button>
+
+          <button
+            type="button"
+            className="search-close"
+            aria-label="Close search"
+            onClick={() => closeSearchOverlay()}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="search-overlay-main">
+          <div className="search-input-wrap">
+            <span className="search-input-icon">⌕</span>
+
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search LUMÉ"
+              autoFocus
+              aria-label="Search products"
+            />
+
+            {searchTerm && (
+              <button
+                type="button"
+                className="search-clear-input"
+                onClick={() => setSearchTerm("")}
+              >
+                CLEAR
+              </button>
+            )}
+          </div>
+
+          <div className="search-overlay-content">
+            <aside className="search-discovery">
+              {recentSearches.length > 0 && (
+                <section className="search-discovery-section">
+                  <div className="search-section-heading">
+                    <span>RECENT SEARCHES</span>
+
+                    <button
+                      type="button"
+                      onClick={clearRecentSearches}
+                    >
+                      CLEAR
+                    </button>
+                  </div>
+
+                  <div className="recent-search-list">
+                    {recentSearches.map((item) => (
+                      <button
+                        type="button"
+                        key={item}
+                        onClick={() => setSearchTerm(item)}
+                      >
+                        <span>↗</span>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="search-discovery-section">
+                <div className="search-section-heading">
+                  <span>POPULAR CATEGORIES</span>
+                </div>
+
+                <div className="search-category-list">
+                  {popularCategories.map((category) => (
+                    <button
+                      type="button"
+                      key={category}
+                      onClick={() => searchCategory(category)}
+                    >
+                      {category}
+                      <span>→</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </aside>
+
+            <section className="search-results-panel">
+              {!normalizedSearchTerm ? (
+                <div className="search-start-message">
+                  <p>SEARCH THE COLLECTION</p>
+                  <h2>Find your next LUMÉ piece.</h2>
+                  <span>
+                    Search by product name or category.
+                  </span>
+                </div>
+              ) : visibleResults.length > 0 ? (
+                <>
+                  <div className="search-results-heading">
+                    <div>
+                      <span>SEARCH RESULTS</span>
+                      <strong>
+                        {liveSearchResults.length} MATCH
+                        {liveSearchResults.length === 1 ? "" : "ES"}
+                      </strong>
+                    </div>
+
+                    <span>“{searchTerm.trim()}”</span>
+                  </div>
+
+                  <div className="search-results-grid">
+                    {visibleResults.map((product) => (
+                      <button
+                        type="button"
+                        className="search-result-card"
+                        key={product.id}
+                        onClick={() => openSearchProduct(product)}
+                      >
+                        <div className="search-result-image">
+                          <img
+                            src={resolveProductImage(product)}
+                            alt={product.name}
+                            onError={(event) =>
+                              handleProductImageError(event, product)
+                            }
+                          />
+
+                          <span
+                            className={
+                              Number(product.stock || 0) > 0
+                                ? "available"
+                                : "sold-out"
+                            }
+                          >
+                            {Number(product.stock || 0) > 0
+                              ? "IN STOCK"
+                              : "SOLD OUT"}
+                          </span>
+                        </div>
+
+                        <div className="search-result-info">
+                          <span>{product.category}</span>
+                          <h3>{product.name}</h3>
+                          <strong>
+                            ₹{Number(product.price || 0).toLocaleString("en-IN")}
+                          </strong>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="search-view-all"
+                    onClick={showAllSearchResults}
+                  >
+                    VIEW ALL {liveSearchResults.length} RESULTS →
+                  </button>
+                </>
+              ) : (
+                <div className="search-no-results">
+                  <span>NO RESULTS</span>
+                  <h2>Nothing matched “{searchTerm.trim()}”.</h2>
+                  <p>
+                    Try another product name or browse one of the categories.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  function openQuickView(product) {
+    setQuickViewProduct(product);
+
+    const sizes =
+      Array.isArray(product.sizes)
+        ? product.sizes
+        : [];
+
+    setQuickViewSize(
+      sizes.length === 1
+        ? sizes[0]
+        : ""
+    );
+
+    setQuickViewQuantity(1);
+
+    setBagDrawerOpen(false);
+    setAccountMenuOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function closeQuickView() {
+    setQuickViewProduct(null);
+    setQuickViewSize("");
+    setQuickViewQuantity(1);
+  }
+
+  function increaseQuickViewQuantity() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const stock =
+      Number(
+        quickViewProduct.stock || 0
+      );
+
+    setQuickViewQuantity(
+      (current) =>
+        current < stock
+          ? current + 1
+          : current
+    );
+  }
+
+  function decreaseQuickViewQuantity() {
+    setQuickViewQuantity(
+      (current) =>
+        current > 1
+          ? current - 1
+          : 1
+    );
+  }
+
+  function addQuickViewToBag() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const success =
+      handleAddToCart(
+        quickViewProduct,
+        quickViewQuantity,
+        quickViewSize
+      );
+
+    if (success) {
+      closeQuickView();
+      openBagDrawer();
+    }
+  }
+
+  function buyQuickViewNow() {
+    if (!quickViewProduct) {
+      return;
+    }
+
+    const product =
+      quickViewProduct;
+
+    const quantity =
+      quickViewQuantity;
+
+    const size =
+      quickViewSize;
+
+    closeQuickView();
+
+    buyNow(
+      product,
+      quantity,
+      size
+    );
+  }
+
+  function closeBagDrawer() {
+    setBagDrawerOpen(false);
+  }
+
+  function goToCheckoutFromBag() {
+    setBagDrawerOpen(false);
+    openCheckout();
+  }
+
   // =====================================================
-  // CHECKOUT PAGE
+  // WISHLIST PAGE
   // =====================================================
 
-  if (showCheckout) {
+  if (
+    showWishlistPage
+  ) {
+    return (
+      <div className="store lume-wishlist-page">
+        {renderInnerHeader("WISHLIST")}
+
+        <main className="wishlist-page">
+          <section className="wishlist-hero">
+            <div>
+              <p>SAVED PIECES</p>
+              <h1>Your wishlist.</h1>
+              <span>
+                Keep the pieces you love in one place.
+              </span>
+            </div>
+
+            <strong>
+              {wishlist.length} ITEM
+              {wishlist.length === 1 ? "" : "S"}
+            </strong>
+          </section>
+
+          {wishlist.length === 0 ? (
+            <section className="wishlist-empty">
+              <span>♡</span>
+              <h2>Nothing saved yet.</h2>
+              <p>
+                Tap the heart on a product to save it here for later.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => openShop("All")}
+              >
+                EXPLORE THE COLLECTION →
+              </button>
+            </section>
+          ) : (
+            <section className="wishlist-grid">
+              {wishlist.map((item) => {
+                const liveProduct =
+                  products.find(
+                    (product) =>
+                      product.id === item.id
+                  ) || item;
+
+                const stock =
+                  Number(
+                    liveProduct.stock || 0
+                  );
+
+                return (
+                  <article
+                    className="wishlist-card"
+                    key={liveProduct.id}
+                  >
+                    <button
+                      type="button"
+                      className="wishlist-image-button"
+                      onClick={() =>
+                        openProduct(
+                          liveProduct
+                        )
+                      }
+                    >
+                      <div className="wishlist-image">
+                        <img
+                          src={resolveProductImage(
+                            liveProduct
+                          )}
+                          alt={
+                            liveProduct.name
+                          }
+                          onError={(event) =>
+                            handleProductImageError(
+                              event,
+                              liveProduct
+                            )
+                          }
+                        />
+
+                        <span
+                          className={
+                            stock > 0
+                              ? "available"
+                              : "sold-out"
+                          }
+                        >
+                          {stock > 0
+                            ? "IN STOCK"
+                            : "SOLD OUT"}
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className="wishlist-card-info">
+                      <div>
+                        <span>
+                          {liveProduct.category}
+                        </span>
+
+                        <h2>
+                          {liveProduct.name}
+                        </h2>
+
+                        <p>
+                          ★{" "}
+                          {Number(
+                            liveProduct.rating ||
+                              0
+                          ).toFixed(1)}
+                        </p>
+                      </div>
+
+                      <strong>
+                        ₹
+                        {Number(
+                          liveProduct.price ||
+                            0
+                        ).toLocaleString(
+                          "en-IN"
+                        )}
+                      </strong>
+                    </div>
+
+                    <div className="wishlist-card-actions">
+                      <button
+                        type="button"
+                        className="wishlist-options"
+                        onClick={() =>
+                          openProduct(
+                            liveProduct
+                          )
+                        }
+                      >
+                        {stock > 0
+                          ? "CHOOSE OPTIONS"
+                          : "VIEW PRODUCT"}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="wishlist-remove"
+                        onClick={() =>
+                          removeWishlistItem(
+                            liveProduct.id
+                          )
+                        }
+                        aria-label={`Remove ${liveProduct.name} from wishlist`}
+                      >
+                        REMOVE
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          )}
+
+          {wishlist.length > 0 && (
+            <section className="wishlist-bottom">
+              <p>
+                Ready to discover more?
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openShop("All")
+                }
+              >
+                CONTINUE SHOPPING →
+              </button>
+            </section>
+          )}
+        </main>
+
+        {renderAuth()}
+        {renderBagDrawer()}
+      </div>
+    );
+  }
+
+  // =====================================================
+  // CHECKOUT
+  // =====================================================
+
+  if (
+    showCheckout
+  ) {
     return (
       <div className="store">
 
-        {renderHeader(false)}
+        {renderInnerHeader(
+          "BAG"
+        )}
 
         <Checkout
-          cart={cart}
+          cart={
+            cart
+          }
           cartTotal={
             cartTotal
           }
-          onBack={() => {
-            setShowCheckout(
-              false
-            );
-
-            scrollToSection(
-              "cart",
-              150
-            );
-          }}
+          onBack={
+            goHome
+          }
           onOrderPlaced={
             handleOrderPlaced
           }
         />
 
         {renderAuth()}
+
+        {renderBagDrawer()}
 
       </div>
     );
@@ -2234,908 +3207,1161 @@ function App() {
     selectedProduct
   ) {
     return (
-      <div className="store">
+      <div className="store lume-product-page">
 
-        {renderHeader(false)}
+        {renderInnerHeader()}
 
         <ProductDetails
           product={
             selectedProduct
           }
+
           onBack={() => {
             setSelectedProduct(
               null
             );
 
-            scrollToSection(
-              "products",
-              150
-            );
+            setShowShop(true);
           }}
+
           onAddToCart={
             handleAddToCart
           }
+
           onBuyNow={
             buyNow
           }
+
           onGoToBag={
-            openCart
+            openBagDrawer
+          }
+          relatedProducts={
+            products
+              .filter(
+                (item) =>
+                  item.id !== selectedProduct.id
+              )
+              .slice(0, 4)
+          }
+          onOpenProduct={
+            openProduct
           }
         />
 
         {renderAuth()}
+
+        {renderBagDrawer()}
 
       </div>
     );
   }
 
   // =====================================================
-  // MAIN WEBSITE
+  // SHOP PAGE
   // =====================================================
 
-  return (
-    <div className="store">
+  if (
+    showShop
+  ) {
+    return (
+      <div className="store lume-shop-page">
 
-      {renderHeader(true)}
+        {renderInnerHeader()}
 
-      {(authLoading ||
-        syncingAccount) && (
+        {renderAuth()}
 
-        <div className="auth-loading">
-          {authLoading
-            ? "Checking account..."
-            : "Syncing your Lumé account..."}
-        </div>
+        {renderQuickView()}
 
-      )}
+        {renderBagDrawer()}
 
-      {renderAuth()}
+        {/* SHOP CONTROLS */}
 
-      {/* SEARCH */}
-
-      {searchOpen && (
-        <div className="search-container">
-
-          <input
-            id="search-box"
-            type="text"
-            placeholder="Search clothing..."
-            value={
-              searchTerm
-            }
-            onChange={(
-              event
-            ) =>
-              setSearchTerm(
-                event.target.value
-              )
-            }
-            autoFocus
-          />
+        <section className="shop-controls">
 
           <button
             type="button"
-            onClick={() => {
-              setSearchTerm("");
-
-              setSearchOpen(
-                false
-              );
-            }}
-            aria-label="Close search"
+            className={filterOpen ? "filter-trigger active" : "filter-trigger"}
+            onClick={() => setFilterOpen((value) => !value)}
           >
-            ✕
+            ☰
+            <span>FILTER</span>
           </button>
 
-        </div>
-      )}
-
-      {/* HERO */}
-
-      <section
-        className="hero-section"
-        id="home"
-      >
-
-        <div className="hero-content">
-
-          <p className="small-title">
-            NEW COLLECTION 2026
-          </p>
-
-          <h1>
-            Wear
-            <br />
-            your
-            <br />
+          <div className="shop-sort">
 
             <span>
-              story.
+              ↕
             </span>
-          </h1>
 
-          <p className="hero-text">
-            Discover timeless clothing
-            designed for people who want
-            to express their own style.
-          </p>
+            <select
+              value={
+                sortOption
+              }
+              onChange={(
+                event
+              ) =>
+                setSortOption(
+                  event.target.value
+                )
+              }
+            >
+              <option>
+                Newest
+              </option>
 
-          <button
-            type="button"
-            className="shop-button"
-            onClick={() =>
-              scrollToSection(
-                "products"
-              )
-            }
-          >
-            SHOP NOW →
-          </button>
+              <option>
+                Price Low
+              </option>
 
-        </div>
+              <option>
+                Price High
+              </option>
 
-        <div className="hero-image">
+              <option>
+                Rating
+              </option>
 
-          <img
-            src="/images/hero.jpg"
-            alt="Lumé fashion collection"
-          />
+            </select>
 
-        </div>
-
-      </section>
-
-      {/* CATEGORIES */}
-
-      <section
-        className="categories"
-        id="categories"
-      >
-
-        <div className="section-heading">
-          <p>
-            EXPLORE
-          </p>
-
-          <h2>
-            Shop by category
-          </h2>
-        </div>
-
-        <div className="category-grid">
-
-          <div
-            className="category-card men"
-            onClick={() =>
-              selectCategory(
-                "All"
-              )
-            }
-          >
-            <div>
-              <p>
-                01
-              </p>
-
-              <h3>
-                Men
-              </h3>
-
-              <button
-                type="button"
-                onClick={(
-                  event
-                ) => {
-                  event.stopPropagation();
-
-                  selectCategory(
-                    "All"
-                  );
-                }}
-              >
-                EXPLORE →
-              </button>
-            </div>
           </div>
 
-          <div
-            className="category-card women"
-            onClick={() =>
-              selectCategory(
-                "All"
-              )
-            }
-          >
-            <div>
-              <p>
-                02
-              </p>
-
-              <h3>
-                Women
-              </h3>
-
-              <button
-                type="button"
-                onClick={(
-                  event
-                ) => {
-                  event.stopPropagation();
-
-                  selectCategory(
-                    "All"
-                  );
-                }}
-              >
-                EXPLORE →
-              </button>
-            </div>
+          <div className="shop-view-line">
+            <span />
           </div>
 
+        </section>
+
+        {filterOpen && (
           <div
-            className="category-card accessories"
-            onClick={() =>
-              selectCategory(
-                "All"
-              )
-            }
+            className="lume-filter-overlay"
+            onClick={() => setFilterOpen(false)}
           >
-            <div>
-              <p>
-                03
-              </p>
+            <aside
+              className="lume-filter-drawer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="filter-drawer-header">
+                <div>
+                  <p>FILTERS</p>
+                  <strong>{filteredProducts.length} PRODUCTS</strong>
+                </div>
 
-              <h3>
-                Essentials
-              </h3>
+                <button
+                  type="button"
+                  aria-label="Close filters"
+                  onClick={() => setFilterOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={(
-                  event
-                ) => {
-                  event.stopPropagation();
+              <div className="filter-drawer-body">
+                <div className="filter-group">
+                  <span>CATEGORY</span>
+                  <div className="filter-options">
+                    {["All", "Shirts", "T-Shirts", "Trousers", "Hoodies"].map(
+                      (value) => (
+                        <button
+                          type="button"
+                          key={value}
+                          className={activeCategory === value ? "active" : ""}
+                          onClick={() => setActiveCategory(value)}
+                        >
+                          {value}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
 
-                  selectCategory(
-                    "All"
-                  );
-                }}
-              >
-                EXPLORE →
-              </button>
-            </div>
+                <div className="filter-group">
+                  <span>SIZE</span>
+                  <div className="filter-options">
+                    {["All", "S", "M", "L", "XL", "28", "30", "32", "34", "36"].map(
+                      (value) => (
+                        <button
+                          type="button"
+                          key={value}
+                          className={sizeFilter === value ? "active" : ""}
+                          onClick={() => setSizeFilter(value)}
+                        >
+                          {value}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="filter-group">
+                  <span>PRICE</span>
+                  <div className="filter-options">
+                    {["All", "Under 1000", "1000-2000", "Above 2000"].map(
+                      (value) => (
+                        <button
+                          type="button"
+                          key={value}
+                          className={priceFilter === value ? "active" : ""}
+                          onClick={() => setPriceFilter(value)}
+                        >
+                          {value === "Under 1000"
+                            ? "Under ₹1,000"
+                            : value === "1000-2000"
+                              ? "₹1,000 – ₹2,000"
+                              : value === "Above 2000"
+                                ? "Above ₹2,000"
+                                : "All"}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="filter-group">
+                  <span>AVAILABILITY</span>
+                  <div className="filter-options">
+                    {["All", "In Stock", "Out of Stock"].map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        className={stockFilter === value ? "active" : ""}
+                        onClick={() => setStockFilter(value)}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="filter-group">
+                  <span>RATING</span>
+                  <div className="filter-options">
+                    {["All", "4.5+", "4.0+"].map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        className={ratingFilter === value ? "active" : ""}
+                        onClick={() => setRatingFilter(value)}
+                      >
+                        {value === "All" ? "All ratings" : `${value} ★`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="filter-drawer-footer">
+                <button
+                  type="button"
+                  className="filter-clear"
+                  onClick={() => {
+                    setActiveCategory("All");
+                    setSizeFilter("All");
+                    setPriceFilter("All");
+                    setStockFilter("All");
+                    setRatingFilter("All");
+                  }}
+                >
+                  CLEAR ALL
+                </button>
+
+                <button
+                  type="button"
+                  className="filter-apply"
+                  onClick={() => setFilterOpen(false)}
+                >
+                  SHOW {filteredProducts.length} RESULTS
+                </button>
+              </div>
+            </aside>
           </div>
+        )}
 
-        </div>
+        {/* CATEGORY SCROLLER */}
 
-      </section>
-
-      {/* PRODUCTS */}
-
-      <section
-        className="products"
-        id="products"
-      >
-
-        <div className="section-heading">
-          <p>
-            JUST IN
-          </p>
-
-          <h2>
-            New arrivals
-          </h2>
-        </div>
-
-        <div className="product-filters">
+        <section className="shop-category-tabs">
 
           {[
             "All",
-            "T-Shirts",
             "Shirts",
+            "T-Shirts",
             "Trousers",
             "Hoodies",
           ].map(
             (category) => (
-
               <button
-                type="button"
                 key={
                   category
                 }
+                type="button"
                 className={
                   activeCategory ===
                   category
-                    ? "active-filter"
+                    ? "active"
                     : ""
                 }
                 onClick={() =>
-                  selectCategory(
+                  setActiveCategory(
                     category
                   )
                 }
               >
-                {category}
+                {
+                  category
+                }
               </button>
-
             )
           )}
 
-        </div>
+        </section>
 
-        {productsLoading && (
-          <div className="empty-cart">
+        {/* PREMIUM SEARCH */}
 
-            <h3>
+        {renderSearchOverlay()}
+
+        {/* PRODUCTS */}
+
+        <section className="lume-product-grid">
+
+          {productsLoading && (
+            <div className="shop-message">
               Loading products...
-            </h3>
-
-            <p>
-              Please wait while we load the latest Lumé collection.
-            </p>
-
-          </div>
-        )}
-
-        {!productsLoading &&
-          productsError && (
-
-          <div className="empty-cart">
-
-            <h3>
-              Products unavailable
-            </h3>
-
-            <p>
-              {productsError}
-            </p>
-
-          </div>
-
-        )}
-
-        {!productsLoading &&
-          !productsError &&
-          (
-            filteredProducts.length ===
-            0
-              ? (
-
-                <div className="empty-cart">
-
-                  <h3>
-                    No products found
-                  </h3>
-
-                  <p>
-                    Try another search.
-                  </p>
-
-                  <button
-                    type="button"
-                    className="shop-button"
-                    onClick={() => {
-                      setSearchTerm(
-                        ""
-                      );
-
-                      setActiveCategory(
-                        "All"
-                      );
-                    }}
-                  >
-                    SHOW ALL PRODUCTS
-                  </button>
-
-                </div>
-
-              )
-              : (
-
-                <div className="product-grid">
-
-                  {filteredProducts.map(
-                    (product) => (
-
-                      <div
-                        className="product-card"
-                        key={
-                          product.id
-                        }
-                        onClick={() =>
-                          openProduct(
-                            product
-                          )
-                        }
-                      >
-
-                        <div className="product-image">
-
-                          <span>
-                            {Number(
-                              product.stock ??
-                                0
-                            ) <= 0
-                              ? "OUT OF STOCK"
-                              : "NEW"}
-                          </span>
-
-                          <button
-                            type="button"
-                            className="wishlist-button"
-                            aria-label={
-                              isWishlisted(
-                                product.id
-                              )
-                                ? "Remove from wishlist"
-                                : "Add to wishlist"
-                            }
-                            onClick={(
-                              event
-                            ) => {
-                              event.stopPropagation();
-
-                              toggleWishlist(
-                                product
-                              );
-                            }}
-                          >
-                            {isWishlisted(
-                              product.id
-                            )
-                              ? "♥"
-                              : "♡"}
-                          </button>
-
-                          <img
-                            src={
-                              product.image
-                            }
-                            alt={
-                              product.name
-                            }
-                          />
-
-                        </div>
-
-                        <div className="product-info">
-
-                          <p className="product-category">
-                            {
-                              product.category
-                            }
-                          </p>
-
-                          <h3>
-                            {
-                              product.name
-                            }
-                          </h3>
-
-                          <p className="product-rating">
-                            ⭐{" "}
-                            {
-                              product.rating
-                            }
-                          </p>
-
-                          <p className="product-price">
-                            ₹
-                            {Number(
-                              product.price ||
-                                0
-                            ).toLocaleString(
-                              "en-IN"
-                            )}
-                          </p>
-
-                          <p>
-                            Stock:{" "}
-                            <strong>
-                              {Number(
-                                product.stock ??
-                                  0
-                              )}
-                            </strong>
-                          </p>
-
-                          <button
-                            type="button"
-                            className="add-cart"
-                            onClick={(
-                              event
-                            ) => {
-                              event.stopPropagation();
-
-                              openProduct(
-                                product
-                              );
-                            }}
-                          >
-                            {Number(
-                              product.stock ??
-                                0
-                            ) <= 0
-                              ? "VIEW PRODUCT"
-                              : "VIEW PRODUCT →"}
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    )
-                  )}
-
-                </div>
-
-              )
+            </div>
           )}
 
-      </section>
-
-      {/* SHOPPING BAG */}
-
-      <section
-        className="cart-section"
-        id="cart"
-      >
-
-        <div className="section-heading">
-          <p>
-            YOUR SELECTION
-          </p>
-
-          <h2>
-            Shopping bag
-          </h2>
-        </div>
-
-        {cart.length === 0 ? (
-
-          <div className="empty-cart">
-
-            <div className="empty-cart-icon">
-              🛒
-            </div>
-
-            <h3>
-              Your bag is empty
-            </h3>
-
-            <p>
-              Discover something you'll
-              love and add it to your bag.
-            </p>
-
-            <button
-              type="button"
-              className="shop-button"
-              onClick={() =>
-                scrollToSection(
-                  "products"
-                )
+          {!productsLoading &&
+            productsError && (
+            <div className="shop-message">
+              {
+                productsError
               }
-            >
-              CONTINUE SHOPPING →
-            </button>
+            </div>
+          )}
 
-          </div>
+          {!productsLoading &&
+            !productsError &&
+            filteredProducts.map(
+              (product) => {
 
-        ) : (
+                const price =
+                  Number(
+                    product.price ||
+                      0
+                  );
 
-          <div className="cart-container">
+                const originalPrice =
+                  Number(
+                    product.originalPrice ||
+                      product.compareAtPrice ||
+                      0
+                  );
 
-            <div className="cart-items">
+                const discount =
+                  originalPrice >
+                  price
+                    ? Math.round(
+                        ((originalPrice -
+                          price) /
+                          originalPrice) *
+                          100
+                      )
+                    : 0;
 
-              {cart.map(
-                (item) => {
+                return (
 
-                  const liveProduct =
-                    products.find(
-                      (product) =>
-                        product.id ===
-                        item.id
-                    );
+                  <article
+                    className="lume-product-card"
+                    key={
+                      product.id
+                    }
+                    onClick={() =>
+                      openProduct(
+                        product
+                      )
+                    }
+                  >
 
-                  const availableStock =
-                    Number(
-                      liveProduct?.stock ??
-                        0
-                    );
-
-                  return (
-                    <div
-                      className="cart-item"
-                      key={
-                        item.id +
-                        "-" +
-                        item.size
-                      }
-                    >
+                    <div className="lume-product-image">
+                  <button
+                    type="button"
+                    className="quick-view-card-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openQuickView(product);
+                    }}
+                  >
+                    QUICK VIEW
+                  </button>
+                  <span
+                    className={`stock-badge ${
+                      Number(product.stock || 0) <= 0 ? "sold-out" : ""
+                    }`}
+                  >
+                    {Number(product.stock || 0) <= 0
+                      ? "SOLD OUT"
+                      : Number(product.stock || 0) <= 5
+                        ? `ONLY ${product.stock} LEFT`
+                        : "IN STOCK"}
+                  </span>
 
                       <img
-                        src={
-                          item.image
-                        }
-                        alt={
-                          item.name
+                        src={resolveProductImage(product)}
+                        alt={product.name}
+                        onError={(event) =>
+                          handleProductImageError(event, product)
                         }
                       />
 
-                      <div className="cart-item-info">
-
-                        <p>
+                      {product.badge && (
+                        <span className="exclusive-badge">
                           {
-                            item.category
+                            product.badge
                           }
-                        </p>
+                        </span>
+                      )}
+
+                    </div>
+
+                    <div className="lume-product-card-info">
+
+                      <div className="lume-product-heading">
 
                         <h3>
-                          {item.name}
+                          {
+                            product.name
+                          }
                         </h3>
-
-                        <strong>
-                          ₹
-                          {Number(
-                            item.price ||
-                              0
-                          ).toLocaleString(
-                            "en-IN"
-                          )}
-                        </strong>
-
-                        <p>
-                          Size:{" "}
-                          <strong>
-                            {item.size}
-                          </strong>
-                        </p>
-
-                        <p>
-                          Available stock:{" "}
-                          <strong>
-                            {
-                              availableStock
-                            }
-                          </strong>
-                        </p>
-
-                        {availableStock <=
-                          0 && (
-                          <p>
-                            OUT OF STOCK
-                          </p>
-                        )}
-
-                        <div className="quantity">
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              decreaseQuantity(
-                                item.id,
-                                item.size
-                              )
-                            }
-                          >
-                            −
-                          </button>
-
-                          <span>
-                            {
-                              item.quantity
-                            }
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              increaseQuantity(
-                                item.id,
-                                item.size
-                              )
-                            }
-                            disabled={
-                              item.quantity >=
-                              availableStock
-                            }
-                          >
-                            +
-                          </button>
-
-                        </div>
 
                         <button
                           type="button"
-                          className="remove-button"
-                          onClick={() =>
-                            removeFromCart(
-                              item.id,
-                              item.size
-                            )
-                          }
+                          onClick={(
+                            event
+                          ) => {
+                            event.stopPropagation();
+
+                            toggleWishlist(
+                              product
+                            );
+                          }}
                         >
-                          REMOVE
+                          {isWishlisted(
+                            product.id
+                          )
+                            ? "♥"
+                            : "♡"}
                         </button>
 
                       </div>
 
+                      <div className="lume-product-pricing">
+
+                        {originalPrice >
+                          price && (
+                          <del>
+                            ₹
+                            {originalPrice.toLocaleString(
+                              "en-IN"
+                            )}
+                          </del>
+                        )}
+
+                        <strong>
+                          ₹
+                          {price.toLocaleString(
+                            "en-IN"
+                          )}
+                        </strong>
+
+                        {discount >
+                          0 && (
+                          <span>
+                            {discount}% OFF
+                          </span>
+                        )}
+
+                      </div>
+
                     </div>
+
+                  </article>
+
+                );
+              }
+            )}
+
+        </section>
+
+        {renderFooter()}
+
+      {/* MOBILE BOTTOM NAV */}
+
+        <MobileBottomNav />
+
+      </div>
+    );
+  }
+
+  // =====================================================
+  // MOBILE BOTTOM NAV COMPONENT
+  // =====================================================
+
+  function MobileBottomNav() {
+    return (
+      <nav className="lume-mobile-bottom-nav">
+
+        <button
+          type="button"
+          onClick={
+            goHome
+          }
+        >
+          <span>
+            ⌂
+          </span>
+
+          <small>
+            HOME
+          </small>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!showShop) {
+              resetPages();
+              setShowShop(true);
+              setActiveCategory("All");
+            }
+
+            openSearchOverlay();
+          }}
+        >
+          <span>
+            ⌕
+          </span>
+
+          <small>
+            SEARCH
+          </small>
+        </button>
+
+        <button
+          type="button"
+          className="bottom-menu-text"
+          onClick={() =>
+            setMobileMenuOpen(
+              true
+            )
+          }
+        >
+          MENU
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              showShop
+            ) {
+              goHome();
+
+              setTimeout(() => {
+                document
+                  .getElementById(
+                    "ai-stylist-home"
+                  )
+                  ?.scrollIntoView({
+                    behavior:
+                      "smooth",
+                  });
+              }, 150);
+            } else {
+              document
+                .getElementById(
+                  "ai-stylist-home"
+                )
+                ?.scrollIntoView({
+                  behavior:
+                    "smooth",
+                });
+            }
+          }}
+        >
+          <span>
+            ✨
+          </span>
+
+          <small>
+            AI
+          </small>
+        </button>
+
+        <button
+          type="button"
+          className="bottom-bag"
+          onClick={
+            openBagDrawer
+          }
+        >
+          <span>
+            ▢
+          </span>
+
+          {cartItems >
+            0 && (
+            <b>
+              {
+                cartItems
+              }
+            </b>
+          )}
+
+          <small>
+            BAG
+          </small>
+        </button>
+
+      </nav>
+    );
+  }
+
+  // =====================================================
+  // CAMPAIGNS
+  // =====================================================
+
+  const campaigns = [
+    {
+      desktopImage: "/images/fresh-desktop.jpg",
+      mobileImage: "/images/fresh-mobile.jpg",
+      title: "Fresh Arrivals",
+      category: "All",
+      className: "campaign-fresh",
+    },
+    {
+      desktopImage: "/images/shirt-desktop.jpg",
+      mobileImage: "/images/shirt-mobile.jpg",
+      title: "Shirts",
+      category: "Shirts",
+      className: "campaign-shirts",
+    },
+    {
+      desktopImage: "/images/tshirt-desktop.jpg",
+      mobileImage: "/images/tshirt-mobile.jpg",
+      title: "T-Shirts",
+      category: "T-Shirts",
+      className: "campaign-tshirts",
+    },
+    {
+      desktopImage: "/images/bottoms-desktop.jpg",
+      mobileImage: "/images/bottoms-mobile.jpg",
+      title: "Bottoms",
+      category: "Trousers",
+      className: "campaign-bottoms",
+    },
+    {
+      desktopImage: "/images/hoodie-desktop.jpg",
+      mobileImage: "/images/hoodie-mobile.jpg",
+      title: "Hoodies",
+      category: "Hoodies",
+      className: "campaign-hoodies",
+    },
+    {
+      desktopImage: "/images/women-desktop.jpg",
+      mobileImage: "/images/women-mobile.jpg",
+      title: "Women's Wear",
+      category: "All",
+      className: "campaign-women",
+    },
+  ];
+
+  // =====================================================
+  // HOME
+  // =====================================================
+
+  return (
+    <div className="store lume-editorial-home">
+
+      {renderAuth()}
+
+        {renderBagDrawer()}
+
+      {(authLoading ||
+        syncingAccount) && (
+        <div className="auth-loading">
+          {authLoading
+            ? "Checking account..."
+            : "Syncing your LUMÉ account..."}
+        </div>
+      )}
+
+      {/* ===============================================
+          OVERLAY HEADER
+      =============================================== */}
+
+      <header className="lume-overlay-header">
+
+        <div className="desktop-brand-lockup">
+          <button
+            type="button"
+            className="overlay-logo desktop-overlay-logo"
+            onClick={goHome}
+            aria-label="LUMÉ home"
+          >
+            LUMÉ
+          </button>
+
+          <span className="desktop-brand-tagline">
+            WEAR YOUR STORY
+          </span>
+        </div>
+
+        <nav className="overlay-category-nav">
+
+          <button
+            onClick={() =>
+              openShop(
+                "Shirts"
+              )
+            }
+          >
+            SHIRTS
+          </button>
+
+          <button
+            onClick={() =>
+              openShop(
+                "T-Shirts"
+              )
+            }
+          >
+            T-SHIRTS
+          </button>
+
+          <button
+            onClick={() =>
+              openShop(
+                "Trousers"
+              )
+            }
+          >
+            BOTTOMS
+          </button>
+
+          <button
+            onClick={() =>
+              openShop(
+                "Hoodies"
+              )
+            }
+          >
+            HOODIES
+          </button>
+
+          <button
+            onClick={() =>
+              openShop(
+                "All"
+              )
+            }
+          >
+            WOMEN
+          </button>
+
+          <button
+            onClick={() =>
+              openShop(
+                "All"
+              )
+            }
+          >
+            SHOP ALL
+          </button>
+
+        </nav>
+
+      </header>
+
+      {/* ===============================================
+          CAMPAIGN SECTIONS
+      =============================================== */}
+
+      <main className="campaign-stack">
+
+        {campaigns.map(
+          (
+            campaign,
+            index
+          ) => (
+
+            <section
+              className={`lume-campaign ${campaign.className}`}
+              key={
+                campaign.title +
+                index
+              }
+              role="button"
+              tabIndex={0}
+              aria-label={`Shop ${campaign.title}`}
+              onClick={() =>
+                openShop(
+                  campaign.category
+                )
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" ||
+                  event.key === " "
+                ) {
+                  event.preventDefault();
+
+                  openShop(
+                    campaign.category
                   );
                 }
-              )}
+              }}
+            >
 
-            </div>
+              <picture className="campaign-picture">
+                <source
+                  media="(max-width: 700px)"
+                  srcSet={campaign.mobileImage}
+                />
 
-            <div className="cart-summary">
+                <source
+                  media="(min-width: 701px)"
+                  srcSet={campaign.desktopImage}
+                />
 
-              <h3>
-                Order summary
-              </h3>
+                <img
+                  src={campaign.desktopImage}
+                  alt={campaign.title}
+                  loading={index === 0 ? "eager" : "lazy"}
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                />
+              </picture>
 
-              <div className="summary-row">
-                <span>
-                  Items
-                </span>
+            </section>
 
-                <span>
-                  {cartItems}
-                </span>
-              </div>
+          )
+        )}
 
-              <div className="summary-row">
-                <span>
-                  Subtotal
-                </span>
+      </main>
 
-                <span>
-                  ₹
-                  {cartTotal.toLocaleString(
-                    "en-IN"
-                  )}
-                </span>
-              </div>
+      {/* ===============================================
+          AI STYLIST
+      =============================================== */}
 
-              <div className="summary-row">
-                <span>
-                  Shipping
-                </span>
+      <section
+        className="home-ai-block"
+        id="ai-stylist-home"
+      >
 
-                <span>
-                  FREE
-                </span>
-              </div>
+        <div className="home-ai-heading">
 
-              <div className="summary-total">
-                <span>
-                  Total
-                </span>
+          <p>
+            LUMÉ AI
+          </p>
 
-                <strong>
-                  ₹
-                  {cartTotal.toLocaleString(
-                    "en-IN"
-                  )}
-                </strong>
-              </div>
+          <h2>
+            YOUR PERSONAL
+            <br />
+            STYLIST
+          </h2>
+
+          <span>
+            Tell us your style,
+            occasion or budget and
+            discover pieces selected
+            for you.
+          </span>
+
+        </div>
+
+        <AIStylist
+          products={
+            products
+          }
+
+          onViewProduct={
+            openProduct
+          }
+
+          onAddToCart={
+            addFromAIStylist
+          }
+        />
+
+      </section>
+
+      {/* ===============================================
+          COMPLETE FOOTER
+      =============================================== */}
+
+      {renderFooter()}
+
+      {/* ===============================================
+          ACCOUNT FLOATING MENU
+      =============================================== */}
+
+      {user &&
+        accountMenuOpen && (
+
+        <div className="lume-floating-account">
+
+          <button
+            className="floating-account-close"
+            onClick={() =>
+              setAccountMenuOpen(
+                false
+              )
+            }
+          >
+            ×
+          </button>
+
+          <p>
+            ACCOUNT
+          </p>
+
+          <strong>
+            {
+              getUserName()
+            }
+          </strong>
+
+          {user.email && (
+            <span>
+              {
+                user.email
+              }
+            </span>
+          )}
+
+          {!user.emailVerified && (
+
+            <button
+              type="button"
+              onClick={
+                checkEmailVerification
+              }
+            >
+              {checkingVerification
+                ? "CHECKING..."
+                : "VERIFY EMAIL"}
+            </button>
+
+          )}
+
+          <button
+            onClick={() => {
+              resetPages();
+              setAccountMenuOpen(false);
+              setShowProfile(true);
+              scrollTop();
+            }}
+          >
+            MY PROFILE
+          </button>
+
+          <button
+            onClick={() => {
+              resetPages();
+              setAccountMenuOpen(false);
+              setShowOrders(true);
+              scrollTop();
+            }}
+          >
+            MY ORDERS
+          </button>
+
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  resetPages();
+
+                  setShowAdminProducts(
+                    true
+                  );
+                }}
+              >
+                ADMIN PRODUCTS
+              </button>
+
+              <button
+                onClick={() => {
+                  resetPages();
+
+                  setShowAdminOrders(
+                    true
+                  );
+                }}
+              >
+                ADMIN ORDERS
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={
+              handleLogout
+            }
+          >
+            SIGN OUT
+          </button>
+
+        </div>
+
+      )}
+
+      {/* ===============================================
+          MOBILE MENU DRAWER
+      =============================================== */}
+
+      {mobileMenuOpen && (
+
+        <div className="lume-mobile-menu-overlay">
+
+          <div className="lume-mobile-menu">
+
+            <div className="mobile-menu-top">
+
+              <strong>
+                L U M É
+              </strong>
 
               <button
                 type="button"
-                className="checkout-button"
-                onClick={
-                  openCheckout
+                onClick={() =>
+                  setMobileMenuOpen(
+                    false
+                  )
                 }
               >
-                PROCEED TO CHECKOUT →
+                ×
+              </button>
+
+            </div>
+
+            <button
+              onClick={() =>
+                openShop(
+                  "Shirts"
+                )
+              }
+            >
+              SHIRTS
+
+              <span>
+                →
+              </span>
+            </button>
+
+            <button
+              onClick={() =>
+                openShop(
+                  "T-Shirts"
+                )
+              }
+            >
+              T-SHIRTS
+
+              <span>
+                →
+              </span>
+            </button>
+
+            <button
+              onClick={() =>
+                openShop(
+                  "Trousers"
+                )
+              }
+            >
+              BOTTOMS
+
+              <span>
+                →
+              </span>
+            </button>
+
+            <button
+              onClick={() =>
+                openShop(
+                  "Hoodies"
+                )
+              }
+            >
+              HOODIES
+
+              <span>
+                →
+              </span>
+            </button>
+
+            <button
+              onClick={() =>
+                openShop(
+                  "All"
+                )
+              }
+            >
+              SHOP ALL
+
+              <span>
+                →
+              </span>
+            </button>
+
+            <div className="mobile-menu-secondary">
+
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(
+                    false
+                  );
+
+                  openAccount();
+                }}
+              >
+                ACCOUNT
+              </button>
+
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  openWishlistPage();
+                }}
+              >
+                WISHLIST (
+                {wishlist.length}
+                )
+              </button>
+
+              <button
+                onClick={
+                  openBagDrawer
+                }
+              >
+                BAG (
+                {
+                  cartItems
+                }
+                )
               </button>
 
             </div>
 
           </div>
 
-        )}
-
-      </section>
-
-      {/* AI STYLIST */}
-
-      <section
-        className="ai-section"
-        id="ai"
-      >
-
-        <div className="ai-section-content">
-
-          <p className="small-title">
-            YOUR PERSONAL STYLIST
-          </p>
-
-          <h2>
-            Style,
-            <br />
-
-            <span>
-              reimagined.
-            </span>
-          </h2>
-
-          <p>
-            Tell our AI stylist what
-            you're looking for and get
-            personalized outfit
-            recommendations.
-          </p>
-
-          <button
-            type="button"
-            className="ai-button"
-            onClick={
-              openAIStylist
-            }
-          >
-            TRY AI STYLIST →
-          </button>
-
         </div>
 
-        <div
-          className="ai-chat"
-          id="ai-chat-box"
-        >
+      )}
 
-          <AIStylist
-            products={
-              products
-            }
-            onViewProduct={
-              openProduct
-            }
-            onAddToCart={
-              addFromAIStylist
-            }
-          />
+      {/* ===============================================
+          MOBILE BOTTOM NAV
+      =============================================== */}
 
-        </div>
-
-      </section>
-
-      <footer>
-
-        <div className="footer-brand">
-          LUMÉ
-        </div>
-
-        <p>
-          Timeless clothing.
-          Your personal style.
-        </p>
-
-        <div className="footer-links">
-
-          <span>
-            Instagram
-          </span>
-
-          <span>
-            Contact
-          </span>
-
-          <span>
-            Privacy
-          </span>
-
-          <span>
-            Terms
-          </span>
-
-        </div>
-
-        <small>
-          © 2026 Lumé. All rights reserved.
-        </small>
-
-      </footer>
+      <MobileBottomNav />
 
     </div>
   );

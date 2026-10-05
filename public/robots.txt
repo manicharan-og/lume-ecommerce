@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lume-clothing-store.web.app/sitemap.xml

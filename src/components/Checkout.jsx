@@ -1,8 +1,12 @@
-import { useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import {
   collection,
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
 } from "firebase/firestore";
@@ -11,6 +15,47 @@ import {
   auth,
   db,
 } from "../firebase";
+
+
+function getFallbackProductImage(product = {}) {
+  const value = `${product.name || ""} ${product.category || ""}`.toLowerCase();
+
+  if (value.includes("trouser") || value.includes("bottom")) return "/images/trousers.jpg";
+  if (value.includes("hoodie")) return "/images/hoodie.jpg";
+  if (value.includes("t-shirt") || value.includes("tshirt") || value.includes("tee")) return "/images/tshirt.jpg";
+  if (value.includes("shirt")) return "/images/shirt.jpg";
+
+  return "/images/tshirt.jpg";
+}
+
+function resolveProductImage(product = {}) {
+  const raw = String(product.image || product.imageUrl || "").trim();
+
+  if (!raw) return getFallbackProductImage(product);
+
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  ) {
+    return raw;
+  }
+
+  if (raw.startsWith("/")) return raw;
+  if (raw.startsWith("images/")) return `/${raw}`;
+
+  return `/images/${raw.replace(/^.*[\\/]/, "")}`;
+}
+
+function handleProductImageError(event, product = {}) {
+  const fallback = getFallbackProductImage(product);
+
+  if (event.currentTarget.src.endsWith(fallback)) return;
+
+  event.currentTarget.src = fallback;
+}
+
 
 function Checkout({
   cart,
@@ -31,10 +76,12 @@ function Checkout({
     email:
       auth.currentUser?.email ||
       "",
+
     address: "",
     city: "",
     state: "",
     pin: "",
+
     payment: "cod",
 
     upiId: "",
@@ -44,6 +91,30 @@ function Checkout({
     cardExpiry: "",
     cardCvv: "",
   });
+
+  // =====================================================
+  // SAVED ADDRESSES
+  // =====================================================
+
+  const [
+    savedAddresses,
+    setSavedAddresses,
+  ] = useState([]);
+
+  const [
+    selectedAddressId,
+    setSelectedAddressId,
+  ] = useState("");
+
+  const [
+    loadingAddress,
+    setLoadingAddress,
+  ] = useState(true);
+
+  const [
+    useNewAddress,
+    setUseNewAddress,
+  ] = useState(false);
 
   // =====================================================
   // ORDER STATE
@@ -89,6 +160,254 @@ function Checkout({
   ] = useState("");
 
   // =====================================================
+  // LOAD PROFILE + SAVED ADDRESSES
+  // =====================================================
+
+  useEffect(() => {
+    async function loadCheckoutProfile() {
+      const currentUser =
+        auth.currentUser;
+
+      if (!currentUser) {
+        setLoadingAddress(false);
+
+        return;
+      }
+
+      try {
+        setLoadingAddress(true);
+
+        const userReference =
+          doc(
+            db,
+            "users",
+            currentUser.uid
+          );
+
+        const userSnapshot =
+          await getDoc(
+            userReference
+          );
+
+        if (
+          !userSnapshot.exists()
+        ) {
+          setFormData(
+            (previous) => ({
+              ...previous,
+
+              email:
+                currentUser.email ||
+                previous.email,
+            })
+          );
+
+          setUseNewAddress(true);
+
+          return;
+        }
+
+        const userData =
+          userSnapshot.data();
+
+        const addresses =
+          Array.isArray(
+            userData.addresses
+          )
+            ? userData.addresses
+            : [];
+
+        setSavedAddresses(
+          addresses
+        );
+
+        // =================================================
+        // FIND DEFAULT ADDRESS
+        // =================================================
+
+        const defaultAddress =
+          addresses.find(
+            (address) =>
+              address.isDefault ===
+              true
+          ) ||
+          addresses[0] ||
+          null;
+
+        // =================================================
+        // SAVED ADDRESS EXISTS
+        // =================================================
+
+        if (defaultAddress) {
+          setSelectedAddressId(
+            defaultAddress.id ||
+              ""
+          );
+
+          setUseNewAddress(false);
+
+          setFormData(
+            (previous) => ({
+              ...previous,
+
+              fullName:
+                defaultAddress.fullName ||
+                userData.fullName ||
+                "",
+
+              phone:
+                defaultAddress.phone ||
+                userData.phone ||
+                "",
+
+              email:
+                currentUser.email ||
+                userData.email ||
+                previous.email,
+
+              address:
+                defaultAddress.address ||
+                "",
+
+              city:
+                defaultAddress.city ||
+                "",
+
+              state:
+                defaultAddress.state ||
+                "",
+
+              pin:
+                defaultAddress.pin ||
+                "",
+            })
+          );
+        }
+
+        // =================================================
+        // NO SAVED ADDRESS
+        // =================================================
+
+        else {
+          setSelectedAddressId("");
+
+          setUseNewAddress(true);
+
+          setFormData(
+            (previous) => ({
+              ...previous,
+
+              fullName:
+                userData.fullName ||
+                "",
+
+              phone:
+                userData.phone ||
+                "",
+
+              email:
+                currentUser.email ||
+                userData.email ||
+                previous.email,
+            })
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Could not load saved checkout information:",
+          error
+        );
+
+        setUseNewAddress(true);
+      } finally {
+        setLoadingAddress(false);
+      }
+    }
+
+    loadCheckoutProfile();
+  }, []);
+
+  // =====================================================
+  // SELECT SAVED ADDRESS
+  // =====================================================
+
+  function selectSavedAddress(
+    addressId
+  ) {
+    const selectedAddress =
+      savedAddresses.find(
+        (address) =>
+          address.id ===
+          addressId
+      );
+
+    if (!selectedAddress) {
+      return;
+    }
+
+    setSelectedAddressId(
+      addressId
+    );
+
+    setUseNewAddress(false);
+
+    setFormData(
+      (previous) => ({
+        ...previous,
+
+        fullName:
+          selectedAddress.fullName ||
+          previous.fullName,
+
+        phone:
+          selectedAddress.phone ||
+          previous.phone,
+
+        address:
+          selectedAddress.address ||
+          "",
+
+        city:
+          selectedAddress.city ||
+          "",
+
+        state:
+          selectedAddress.state ||
+          "",
+
+        pin:
+          selectedAddress.pin ||
+          "",
+      })
+    );
+
+    setOrderError("");
+  }
+
+  // =====================================================
+  // USE NEW ADDRESS
+  // =====================================================
+
+  function chooseNewAddress() {
+    setSelectedAddressId("");
+
+    setUseNewAddress(true);
+
+    setFormData(
+      (previous) => ({
+        ...previous,
+
+        address: "",
+        city: "",
+        state: "",
+        pin: "",
+      })
+    );
+
+    setOrderError("");
+  }
+
+  // =====================================================
   // HANDLE INPUT
   // =====================================================
 
@@ -103,15 +422,29 @@ function Checkout({
     let nextValue =
       value;
 
+    // =================================================
+    // PHONE
+    // =================================================
+
     if (
       name ===
       "phone"
     ) {
       nextValue =
         value
-          .replace(/\D/g, "")
-          .slice(0, 10);
+          .replace(
+            /\D/g,
+            ""
+          )
+          .slice(
+            0,
+            10
+          );
     }
+
+    // =================================================
+    // PIN
+    // =================================================
 
     if (
       name ===
@@ -119,9 +452,19 @@ function Checkout({
     ) {
       nextValue =
         value
-          .replace(/\D/g, "")
-          .slice(0, 6);
+          .replace(
+            /\D/g,
+            ""
+          )
+          .slice(
+            0,
+            6
+          );
     }
+
+    // =================================================
+    // CARD NUMBER
+    // =================================================
 
     if (
       name ===
@@ -129,9 +472,19 @@ function Checkout({
     ) {
       nextValue =
         value
-          .replace(/\D/g, "")
-          .slice(0, 16);
+          .replace(
+            /\D/g,
+            ""
+          )
+          .slice(
+            0,
+            16
+          );
     }
+
+    // =================================================
+    // CVV
+    // =================================================
 
     if (
       name ===
@@ -139,9 +492,19 @@ function Checkout({
     ) {
       nextValue =
         value
-          .replace(/\D/g, "")
-          .slice(0, 3);
+          .replace(
+            /\D/g,
+            ""
+          )
+          .slice(
+            0,
+            3
+          );
     }
+
+    // =================================================
+    // EXPIRY
+    // =================================================
 
     if (
       name ===
@@ -149,8 +512,14 @@ function Checkout({
     ) {
       let digits =
         value
-          .replace(/\D/g, "")
-          .slice(0, 4);
+          .replace(
+            /\D/g,
+            ""
+          )
+          .slice(
+            0,
+            4
+          );
 
       if (
         digits.length >
@@ -228,7 +597,7 @@ function Checkout({
   }
 
   // =====================================================
-  // CUSTOMER FORM VALIDATION
+  // CUSTOMER VALIDATION
   // =====================================================
 
   function validateCustomerDetails() {
@@ -304,12 +673,20 @@ function Checkout({
   // =====================================================
 
   function validatePayment() {
+    // =================================================
+    // COD
+    // =================================================
+
     if (
       formData.payment ===
       "cod"
     ) {
       return true;
     }
+
+    // =================================================
+    // UPI
+    // =================================================
 
     if (
       formData.payment ===
@@ -332,6 +709,10 @@ function Checkout({
 
       return true;
     }
+
+    // =================================================
+    // CARD
+    // =================================================
 
     if (
       formData.payment ===
@@ -371,6 +752,59 @@ function Checkout({
         return false;
       }
 
+      // =================================================
+      // CHECK EXPIRY IS NOT IN THE PAST
+      // =================================================
+
+      const [
+        expiryMonth,
+        expiryYear,
+      ] =
+        formData.cardExpiry.split(
+          "/"
+        );
+
+      const currentDate =
+        new Date();
+
+      const currentMonth =
+        currentDate.getMonth() +
+        1;
+
+      const currentYear =
+        Number(
+          String(
+            currentDate.getFullYear()
+          ).slice(-2)
+        );
+
+      const expMonth =
+        Number(
+          expiryMonth
+        );
+
+      const expYear =
+        Number(
+          expiryYear
+        );
+
+      if (
+        expYear <
+          currentYear ||
+        (
+          expYear ===
+            currentYear &&
+          expMonth <
+            currentMonth
+        )
+      ) {
+        alert(
+          "Your card has expired. Please enter a valid expiry date."
+        );
+
+        return false;
+      }
+
       if (
         !/^[0-9]{3}$/.test(
           formData.cardCvv
@@ -394,16 +828,23 @@ function Checkout({
   // =====================================================
 
   async function processMockPayment() {
+    // =================================================
+    // COD
+    // =================================================
+
     if (
       formData.payment ===
       "cod"
     ) {
       return {
         success: true,
+
         paymentStatus:
           "Pending",
+
         paymentMode:
           "cod",
+
         transactionId:
           "",
       };
@@ -413,7 +854,7 @@ function Checkout({
       "Processing"
     );
 
-    // Mock delay
+    // Mock payment delay
 
     await new Promise(
       (resolve) =>
@@ -422,9 +863,6 @@ function Checkout({
           1200
         )
     );
-
-    // For project/demo:
-    // online payment succeeds automatically.
 
     const generatedTransactionId =
       createTransactionId();
@@ -484,9 +922,7 @@ function Checkout({
   ) {
     event.preventDefault();
 
-    if (
-      placingOrder
-    ) {
+    if (placingOrder) {
       return;
     }
 
@@ -505,9 +941,7 @@ function Checkout({
     const currentUser =
       auth.currentUser;
 
-    if (
-      !currentUser
-    ) {
+    if (!currentUser) {
       alert(
         "Please sign in before placing your order."
       );
@@ -526,14 +960,12 @@ function Checkout({
     }
 
     try {
-      setPlacingOrder(
-        true
-      );
+      setPlacingOrder(true);
 
       setOrderError("");
 
       // =================================================
-      // MOCK PAYMENT FIRST
+      // MOCK PAYMENT
       // =================================================
 
       const paymentResult =
@@ -574,32 +1006,74 @@ function Checkout({
         async (
           transaction
         ) => {
-          const productChecks =
-            [];
+          // =================================================
+          // GROUP CART QUANTITY BY PRODUCT
+          // =================================================
 
-          // =============================================
-          // READ PRODUCTS
-          // =============================================
+          const quantityByProductId =
+            new Map();
 
           for (
             const item
             of cart
           ) {
-            if (
-              !item.id
-            ) {
+            if (!item.id) {
               throw new Error(
                 `${item.name} does not have a valid product ID.`
               );
             }
 
+            const productId =
+              String(
+                item.id
+              );
+
+            const quantity =
+              Number(
+                item.quantity ||
+                  0
+              );
+
+            if (
+              quantity <=
+              0
+            ) {
+              throw new Error(
+                `Invalid quantity for ${item.name}.`
+              );
+            }
+
+            quantityByProductId.set(
+              productId,
+              (
+                quantityByProductId.get(
+                  productId
+                ) ||
+                0
+              ) +
+                quantity
+            );
+          }
+
+          // =================================================
+          // READ ALL PRODUCTS FIRST
+          // =================================================
+
+          const productDataById =
+            new Map();
+
+          for (
+            const [
+              productId,
+              requestedQuantity,
+            ]
+            of quantityByProductId.entries()
+          ) {
             const productReference =
               doc(
                 db,
                 "products",
-                String(
-                  item.id
-                )
+                productId
               );
 
             const productSnapshot =
@@ -611,7 +1085,7 @@ function Checkout({
               !productSnapshot.exists()
             ) {
               throw new Error(
-                `${item.name} is no longer available.`
+                "One of the products in your cart is no longer available."
               );
             }
 
@@ -623,7 +1097,10 @@ function Checkout({
               false
             ) {
               throw new Error(
-                `${item.name} is currently unavailable.`
+                `${
+                  productData.name ||
+                  "Product"
+                } is currently unavailable.`
               );
             }
 
@@ -633,27 +1110,15 @@ function Checkout({
                   0
               );
 
-            const requestedQuantity =
-              Number(
-                item.quantity ??
-                  0
-              );
-
-            if (
-              requestedQuantity <=
-              0
-            ) {
-              throw new Error(
-                `Invalid quantity for ${item.name}.`
-              );
-            }
-
             if (
               currentStock <=
               0
             ) {
               throw new Error(
-                `${item.name} is out of stock.`
+                `${
+                  productData.name ||
+                  "Product"
+                } is out of stock.`
               );
             }
 
@@ -662,35 +1127,63 @@ function Checkout({
               currentStock
             ) {
               throw new Error(
-                `${item.name} has only ${currentStock} item${
+                `${
+                  productData.name ||
+                  "Product"
+                } has only ${currentStock} item${
                   currentStock ===
                   1
                     ? ""
                     : "s"
-                } left in stock. Please reduce the quantity.`
+                } left in stock.`
               );
             }
 
-            productChecks.push({
-              item,
-              productReference,
-              productData,
-              currentStock,
-              requestedQuantity,
-            });
+            productDataById.set(
+              productId,
+              {
+                productReference,
+                productData,
+                currentStock,
+                requestedQuantity,
+              }
+            );
           }
 
-          // =============================================
+          // =================================================
           // BUILD ORDER ITEMS
-          // =============================================
+          // =================================================
 
           const orderItems =
-            productChecks.map(
-              ({
-                item,
-                productData,
-                requestedQuantity,
-              }) => {
+            cart.map(
+              (item) => {
+                const productId =
+                  String(
+                    item.id
+                  );
+
+                const storedProduct =
+                  productDataById.get(
+                    productId
+                  );
+
+                if (
+                  !storedProduct
+                ) {
+                  throw new Error(
+                    `${item.name} could not be verified.`
+                  );
+                }
+
+                const productData =
+                  storedProduct.productData;
+
+                const requestedQuantity =
+                  Number(
+                    item.quantity ||
+                      0
+                  );
+
                 const currentPrice =
                   Number(
                     productData.price ??
@@ -699,10 +1192,7 @@ function Checkout({
                   );
 
                 return {
-                  productId:
-                    String(
-                      item.id
-                    ),
+                  productId,
 
                   name:
                     productData.name ||
@@ -725,7 +1215,8 @@ function Checkout({
                     requestedQuantity,
 
                   size:
-                    item.size,
+                    item.size ||
+                    "",
 
                   itemTotal:
                     currentPrice *
@@ -734,9 +1225,9 @@ function Checkout({
               }
             );
 
-          // =============================================
+          // =================================================
           // LIVE TOTALS
-          // =============================================
+          // =================================================
 
           const calculatedSubtotal =
             orderItems.reduce(
@@ -745,7 +1236,10 @@ function Checkout({
                 item
               ) =>
                 total +
-                item.itemTotal,
+                Number(
+                  item.itemTotal ||
+                    0
+                ),
               0
             );
 
@@ -756,27 +1250,30 @@ function Checkout({
                 item
               ) =>
                 total +
-                item.quantity,
+                Number(
+                  item.quantity ||
+                    0
+                ),
               0
             );
 
           finalOrderTotal =
             calculatedSubtotal;
 
-          // =============================================
+          // =================================================
           // REDUCE STOCK
-          // =============================================
+          // =================================================
 
           for (
-            const check
-            of productChecks
+            const productCheck
+            of productDataById.values()
           ) {
             const newStock =
-              check.currentStock -
-              check.requestedQuantity;
+              productCheck.currentStock -
+              productCheck.requestedQuantity;
 
             transaction.update(
-              check.productReference,
+              productCheck.productReference,
               {
                 stock:
                   newStock,
@@ -787,9 +1284,9 @@ function Checkout({
             );
           }
 
-          // =============================================
+          // =================================================
           // ORDER DATA
-          // =============================================
+          // =================================================
 
           const orderData = {
             orderNumber:
@@ -825,6 +1322,11 @@ function Checkout({
 
               pin:
                 formData.pin.trim(),
+
+              savedAddressId:
+                useNewAddress
+                  ? ""
+                  : selectedAddressId,
             },
 
             items:
@@ -863,9 +1365,6 @@ function Checkout({
             transactionId:
               paymentResult
                 .transactionId,
-
-            // Never save card number/CVV.
-            // Never save sensitive payment information.
 
             paidAt:
               paymentResult
@@ -945,13 +1444,9 @@ function Checkout({
           .transactionId
       );
 
-      setOrderPlaced(
-        true
-      );
+      setOrderPlaced(true);
 
-      if (
-        onOrderPlaced
-      ) {
+      if (onOrderPlaced) {
         await onOrderPlaced({
           firestoreId:
             orderReference.id,
@@ -971,9 +1466,7 @@ function Checkout({
               .transactionId,
         });
       }
-    } catch (
-      error
-    ) {
+    } catch (error) {
       console.error(
         "Order creation error:",
         error
@@ -1002,9 +1495,7 @@ function Checkout({
         errorMessage
       );
     } finally {
-      setPlacingOrder(
-        false
-      );
+      setPlacingOrder(false);
     }
   }
 
@@ -1012,9 +1503,7 @@ function Checkout({
   // ORDER SUCCESS
   // =====================================================
 
-  if (
-    orderPlaced
-  ) {
+  if (orderPlaced) {
     return (
       <section className="checkout-page">
 
@@ -1046,9 +1535,7 @@ function Checkout({
             </span>
 
             <strong>
-              {
-                orderId
-              }
+              {orderId}
             </strong>
 
           </div>
@@ -1089,7 +1576,20 @@ function Checkout({
                 Payment Status
               </span>
 
-              <strong>
+              <strong
+                className={
+                  paymentStatus ===
+                  "Paid"
+                    ? "payment-status-paid"
+                    : paymentStatus ===
+                      "Pending"
+                    ? "payment-status-pending"
+                    : paymentStatus ===
+                      "Failed"
+                    ? "payment-status-failed"
+                    : ""
+                }
+              >
                 {
                   paymentStatus
                 }
@@ -1187,13 +1687,15 @@ function Checkout({
   }
 
   // =====================================================
-  // CHECKOUT
+  // CHECKOUT PAGE
   // =====================================================
 
   return (
     <section className="checkout-page">
 
-      {/* HEADER */}
+      {/* =================================================
+          HEADER
+      ================================================= */}
 
       <div className="checkout-header">
 
@@ -1218,19 +1720,23 @@ function Checkout({
           </h1>
 
           <p>
-            Enter your details to
-            complete your purchase.
+            Review your details,
+            delivery address and
+            payment method.
           </p>
 
         </div>
 
       </div>
 
-      {/* STEPS */}
+      {/* =================================================
+          STEPS
+      ================================================= */}
 
       <div className="checkout-steps">
 
         <div className="checkout-step active">
+
           <span>
             1
           </span>
@@ -1238,11 +1744,13 @@ function Checkout({
           <strong>
             Information
           </strong>
+
         </div>
 
         <div className="step-line" />
 
         <div className="checkout-step active">
+
           <span>
             2
           </span>
@@ -1250,11 +1758,13 @@ function Checkout({
           <strong>
             Delivery
           </strong>
+
         </div>
 
         <div className="step-line" />
 
         <div className="checkout-step active">
+
           <span>
             3
           </span>
@@ -1262,6 +1772,7 @@ function Checkout({
           <strong>
             Payment
           </strong>
+
         </div>
 
       </div>
@@ -1275,7 +1786,9 @@ function Checkout({
 
         <div className="checkout-form">
 
-          {/* CUSTOMER */}
+          {/* =================================================
+              CUSTOMER INFORMATION
+          ================================================= */}
 
           <div className="checkout-section">
 
@@ -1382,7 +1895,9 @@ function Checkout({
 
           </div>
 
-          {/* DELIVERY */}
+          {/* =================================================
+              DELIVERY
+          ================================================= */}
 
           <div className="checkout-section">
 
@@ -1403,115 +1918,255 @@ function Checkout({
                 </h2>
 
                 <span>
-                  Where should we
-                  deliver your order?
+                  Choose a saved address
+                  or enter a new
+                  delivery address.
                 </span>
 
               </div>
 
             </div>
 
-            <div className="form-grid">
+            {/* ===============================================
+                LOADING
+            =============================================== */}
 
-              <div className="form-group full-width">
+            {loadingAddress ? (
 
-                <label>
-                  Address{" "}
-                  <span>*</span>
-                </label>
-
-                <textarea
-                  name="address"
-                  value={
-                    formData.address
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="House / Flat number, Street, Area"
-                  rows="4"
-                  autoComplete="street-address"
-                  required
-                />
-
+              <div className="saved-address-loading">
+                Loading your saved
+                addresses...
               </div>
 
-              <div className="form-group">
+            ) : (
 
-                <label>
-                  City{" "}
-                  <span>*</span>
-                </label>
+              <>
 
-                <input
-                  type="text"
-                  name="city"
-                  value={
-                    formData.city
+                {/* ===========================================
+                    SAVED ADDRESSES
+                =========================================== */}
+
+                {savedAddresses.length >
+                  0 && (
+
+                  <div className="checkout-saved-addresses">
+
+                    <p className="small-title">
+                      SAVED ADDRESSES
+                    </p>
+
+                    <div className="checkout-address-grid">
+
+                      {savedAddresses.map(
+                        (address) => (
+
+                          <button
+                            key={
+                              address.id
+                            }
+                            type="button"
+                            className={
+                              selectedAddressId ===
+                                address.id &&
+                              !useNewAddress
+                                ? "checkout-address-card selected"
+                                : "checkout-address-card"
+                            }
+                            onClick={() =>
+                              selectSavedAddress(
+                                address.id
+                              )
+                            }
+                          >
+
+                            <div className="checkout-address-top">
+
+                              <strong>
+                                {
+                                  address.label ||
+                                  "Address"
+                                }
+                              </strong>
+
+                              {address.isDefault && (
+                                <span>
+                                  DEFAULT
+                                </span>
+                              )}
+
+                            </div>
+
+                            <p>
+                              <strong>
+                                {
+                                  address.fullName
+                                }
+                              </strong>
+                            </p>
+
+                            <p>
+                              {
+                                address.address
+                              }
+                            </p>
+
+                            <p>
+                              {
+                                address.city
+                              }
+                              ,{" "}
+                              {
+                                address.state
+                              }{" "}
+                              -{" "}
+                              {
+                                address.pin
+                              }
+                            </p>
+
+                            <p>
+                              Phone:{" "}
+                              {
+                                address.phone
+                              }
+                            </p>
+
+                          </button>
+
+                        )
+                      )}
+
+                    </div>
+
+                  </div>
+
+                )}
+
+                {/* ===========================================
+                    NEW ADDRESS
+                =========================================== */}
+
+                <button
+                  type="button"
+                  className={
+                    useNewAddress
+                      ? "new-address-button active"
+                      : "new-address-button"
                   }
-                  onChange={
-                    handleChange
+                  onClick={
+                    chooseNewAddress
                   }
-                  placeholder="City"
-                  autoComplete="address-level2"
-                  required
-                />
+                >
+                  + USE A NEW ADDRESS
+                </button>
 
-              </div>
+                <div className="form-grid">
 
-              <div className="form-group">
+                  <div className="form-group full-width">
 
-                <label>
-                  State{" "}
-                  <span>*</span>
-                </label>
+                    <label>
+                      Address{" "}
+                      <span>*</span>
+                    </label>
 
-                <input
-                  type="text"
-                  name="state"
-                  value={
-                    formData.state
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="State"
-                  autoComplete="address-level1"
-                  required
-                />
+                    <textarea
+                      name="address"
+                      value={
+                        formData.address
+                      }
+                      onChange={
+                        handleChange
+                      }
+                      placeholder="House / Flat number, Street, Area"
+                      rows="4"
+                      autoComplete="street-address"
+                      required
+                    />
 
-              </div>
+                  </div>
 
-              <div className="form-group">
+                  <div className="form-group">
 
-                <label>
-                  PIN Code{" "}
-                  <span>*</span>
-                </label>
+                    <label>
+                      City{" "}
+                      <span>*</span>
+                    </label>
 
-                <input
-                  type="text"
-                  name="pin"
-                  value={
-                    formData.pin
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="6-digit PIN"
-                  maxLength="6"
-                  inputMode="numeric"
-                  autoComplete="postal-code"
-                  required
-                />
+                    <input
+                      type="text"
+                      name="city"
+                      value={
+                        formData.city
+                      }
+                      onChange={
+                        handleChange
+                      }
+                      placeholder="City"
+                      autoComplete="address-level2"
+                      required
+                    />
 
-              </div>
+                  </div>
 
-            </div>
+                  <div className="form-group">
+
+                    <label>
+                      State{" "}
+                      <span>*</span>
+                    </label>
+
+                    <input
+                      type="text"
+                      name="state"
+                      value={
+                        formData.state
+                      }
+                      onChange={
+                        handleChange
+                      }
+                      placeholder="State"
+                      autoComplete="address-level1"
+                      required
+                    />
+
+                  </div>
+
+                  <div className="form-group">
+
+                    <label>
+                      PIN Code{" "}
+                      <span>*</span>
+                    </label>
+
+                    <input
+                      type="text"
+                      name="pin"
+                      value={
+                        formData.pin
+                      }
+                      onChange={
+                        handleChange
+                      }
+                      placeholder="6-digit PIN"
+                      maxLength="6"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      required
+                    />
+
+                  </div>
+
+                </div>
+
+              </>
+
+            )}
 
           </div>
 
-          {/* PAYMENT */}
+          {/* =================================================
+              PAYMENT
+          ================================================= */}
 
           <div className="checkout-section">
 
@@ -1544,11 +2199,9 @@ function Checkout({
 
               {[
                 {
-                  value:
-                    "cod",
+                  value: "cod",
 
-                  icon:
-                    "💵",
+                  icon: "💵",
 
                   title:
                     "Cash on Delivery",
@@ -1558,11 +2211,9 @@ function Checkout({
                 },
 
                 {
-                  value:
-                    "upi",
+                  value: "upi",
 
-                  icon:
-                    "📱",
+                  icon: "📱",
 
                   title:
                     "UPI",
@@ -1572,11 +2223,9 @@ function Checkout({
                 },
 
                 {
-                  value:
-                    "card",
+                  value: "card",
 
-                  icon:
-                    "💳",
+                  icon: "💳",
 
                   title:
                     "Credit / Debit Card",
@@ -1585,9 +2234,7 @@ function Checkout({
                     "Mock card payment for testing",
                 },
               ].map(
-                (
-                  method
-                ) => (
+                (method) => (
 
                   <label
                     key={
@@ -1649,9 +2296,9 @@ function Checkout({
 
             </div>
 
-            {/* ===========================================
-                UPI DETAILS
-            =========================================== */}
+            {/* ===============================================
+                UPI
+            =============================================== */}
 
             {formData.payment ===
               "upi" && (
@@ -1685,18 +2332,18 @@ function Checkout({
                 </div>
 
                 <p className="mock-payment-note">
-                  This is a test payment.
-                  No real money will be
-                  charged.
+                  This is a test
+                  payment. No real money
+                  will be charged.
                 </p>
 
               </div>
 
             )}
 
-            {/* ===========================================
-                CARD DETAILS
-            =========================================== */}
+            {/* ===============================================
+                CARD
+            =============================================== */}
 
             {formData.payment ===
               "card" && (
@@ -1807,15 +2454,17 @@ function Checkout({
 
                 <p className="mock-payment-note">
                   Test only. Card number
-                  and CVV are never stored
-                  in Firestore.
+                  and CVV are never
+                  stored in Firestore.
                 </p>
 
               </div>
 
             )}
 
-            {/* PAYMENT PROCESSING */}
+            {/* ===============================================
+                PAYMENT PROCESSING
+            =============================================== */}
 
             {paymentStatus ===
               "Processing" && (
@@ -1827,6 +2476,10 @@ function Checkout({
             )}
 
           </div>
+
+          {/* =================================================
+              ERROR
+          ================================================= */}
 
           {orderError && (
 
@@ -1877,9 +2530,7 @@ function Checkout({
           <div className="checkout-products">
 
             {cart.map(
-              (
-                item
-              ) => (
+              (item) => (
 
                 <div
                   className="checkout-product"
@@ -1889,11 +2540,10 @@ function Checkout({
                   <div className="checkout-product-image">
 
                     <img
-                      src={
-                        item.image
-                      }
-                      alt={
-                        item.name
+                      src={resolveProductImage(item)}
+                      alt={item.name}
+                      onError={(event) =>
+                        handleProductImageError(event, item)
                       }
                     />
 
@@ -2001,10 +2651,13 @@ function Checkout({
             type="submit"
             className="place-order-button"
             disabled={
-              placingOrder
+              placingOrder ||
+              loadingAddress
             }
           >
-            {placingOrder
+            {loadingAddress
+              ? "LOADING ADDRESS..."
+              : placingOrder
               ? formData.payment ===
                 "cod"
                 ? "CHECKING STOCK..."
@@ -2019,11 +2672,12 @@ function Checkout({
                   "en-IN"
                 )}`}
 
-            {!placingOrder && (
-              <span>
-                →
-              </span>
-            )}
+            {!placingOrder &&
+              !loadingAddress && (
+                <span>
+                  →
+                </span>
+              )}
           </button>
 
           <div className="secure-text">
